@@ -25,6 +25,26 @@ class DarkNet(object):
         uni_cfg_path, self.cfg_sections = make_unique_section_file(cfg_path)
         # Read cfg file
         self.cfg.read(uni_cfg_path)
+
+        # Get input image info
+        try:
+            self.img_height = self.cfg.getint(self.cfg_sections[0], "height")
+            self.img_width = self.cfg.getint(self.cfg_sections[0], "width")
+            self.img_channels = self.cfg.getint(self.cfg_sections[0], "channels")
+        except Exception as e:
+            raise ValueError(e)
+        
+        # Get output feature map info
+        try:
+            self.classes = self.cfg.getint(self.cfg_sections[-1], "classes")
+            self.cell_size = self.cfg.getint(self.cfg_sections[-1], "side")
+            self.box_nums = self.cfg.getint(self.cfg_sections[-1], "num")
+        except Exception as e:
+            raise ValueError(e)
+        
+        # print(self.img_height, self.img_width, self.img_channels)
+        # print(self.classes, self.cell_size, self.box_nums)
+
     def construct_model(self):
         pass
     def load_weight(self, weight_path):
