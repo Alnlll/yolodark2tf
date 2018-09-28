@@ -44,8 +44,71 @@ class DarkNet(object):
         
         # print(self.img_height, self.img_width, self.img_channels)
         # print(self.classes, self.cell_size, self.box_nums)
-
-    def construct_model(self):
+    def create_convolution_layer(
+        self,
+        input,
+        filters, f_h, f_w, in_chnnales,
+        strides,
+        padding,
+        batch_norm,
+        activation,
+        name = None):
+        '''
+        Create a convolution layer.
+        Arguments:
+        Returns:
+        '''
         pass
+    def create_modle(self, cfg_path):
+        # Parse model config
+        self.parse_config(cfg_path)
+
+        # Create model by config file
+        for index, section in enumerate(self.cfg_sections[1:]):
+            if "convolution" in section:
+                batch_norm, filters, size, stride, padding = map(
+                    lambda x: self.cfg.getint(section, x),
+                    ['batch_normalize', 'filters', 'size', 'stride', 'pad']
+                )
+                activation = self.cfg.get(section, 'activation')
+                # print(section)
+                # print(batch_norm)
+                # print(filters)
+                # print(size)
+                # print(stride)
+                # print(padding)
+                # print(activation)
+            if "local" in section:
+                size, stride, pad, filters = map(
+                    lambda x: self.cfg.getint(section, x),
+                    ['size', 'stride', 'pad', 'filters']
+                )
+                activation = self.cfg.get(section, 'activation')
+                # print(section)
+                # print(size)
+                # print(stride)
+                # print(padding)
+                # print(filters)
+                # print(activation)
+
+            if "maxpool" in section:
+                size, stride = map(
+                    lambda x: self.cfg.getint(section, x),
+                    ['size', 'stride']
+                )
+                # print(section)
+                # print(size, stride)
+
+            if "dropout" in section:
+                prob = self.cfg.getfloat(section, 'probability')
+                # print(section)
+                # print(prob)
+
+            if "connected" in section:
+                n_out = self.cfg.getint(section, 'output')
+                activation = self.cfg.get(section, 'activation')
+                # print(section)
+                # print(n_out)
+                # print(activation)
     def load_weight(self, weight_path):
-        pass;
+        pass
