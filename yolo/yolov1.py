@@ -208,6 +208,47 @@ class DarkNet(object):
                 raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
 
         return output
+    def create_fully_connectd_layer(
+        self,
+        input,
+        n_out,
+        activation='leaky',
+        weight_initializer=tf.variance_scaling_initializer(),
+        use_bias=True,
+        bias_initializer=tf.variance_scaling_initializer(),
+        name=None):
+        '''
+        Fully-Connected layer.
+        '''
+
+        with tf.variable_scope(name):
+            # Do flatten
+            input = tf.layers.flatten(input, name='flatten')
+            # Get weight
+            n_in = input.shape[-1]
+            W = tf.get_variable(
+                'weight', 
+                [n_in, n_out],
+                initializer=weight_initializer,
+                dtype=tf.float32)
+            # Get bias
+            if use_bias:
+                b = tf.get_variable(
+                    'bias',
+                    [n_out],
+                    initializer=bias_initializer,
+                    dtype=tf.float32)
+                output = tf.nn.bias_add(tf.matmul(input, W), b)
+            else:
+                output = tf.matmul(input, W)
+
+            if activation:
+                output = self.activation(output, activation)
+
+        return output
+
+
+
     def create_model(self):
         # Parse model config
         self.parse_config(self.flags.cfg)
