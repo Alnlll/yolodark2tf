@@ -8,14 +8,16 @@ try:
     import ConfigParser as configparser
 except ImportError:
     import configparser
-
-from utils.utils import make_unique_section_file
+import numpy as np
 import tensorflow as tf
 
+from utils.utils import make_unique_section_file
+
 class DarkNet(object):
-    def __init__(self):
+    def __init__(self, flags):
         self.cfg = configparser.ConfigParser()
         self.cfg_sections = None
+        self.flags = flags
     def __del__(self):
         pass
     def parse_config(self, cfg_path):
@@ -44,40 +46,114 @@ class DarkNet(object):
         
         # print(self.img_height, self.img_width, self.img_channels)
         # print(self.classes, self.cell_size, self.box_nums)
+    # def create_bn_layer(
+    #     self,
+    #     input,
+    #     moving_decay=0.9,
+    #     eps=1e-5,
+    #     is_training=False,
+    #     name='bn'):
+    #     '''
+    #     Create batch normalization layer
+    #     '''
+    #     with tf.variable_scope(name):
+    #         # Data variance to learn
+    #         gamma = tf.get_variable(
+    #             "gamma", input.shape[-1],
+    #             initializer=tf.constant_initializer(1.0), trainable=True)
+    #         # Data mean to learn
+    #         beta = tf.get_variable(
+    #             "beta", input.shape[-1],
+    #             initializer=tf.constant_initializer(0.0), trainable=True)
+
+    #         # Calculate batch mean and variance
+    #         axises = np.arange(len(input.shape) - 1)
+    #         batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
+
+    #         # Moving avergae for mean and variance
+    #         ema = tf.train.ExponentialMovingAverage(decay=moving_decay)
+    #         def mean_var_with_update():
+    #             ema_apply_op = ema.apply([batch_mean, batch_var])
+    #             with tf.control_dependencies([ema_apply_op]):
+    #                  return tf.identity(batch_mean), tf.identity(batch_var)
+            
+    #         # Update mean and var
+    #         mean, var = tf.cond(
+    #             is_training,
+    #             mean_var_with_update,
+    #             lambda: (ema.average(batch_mean), ema.average(batch_var))
+    #         )
+
+    #         output = tf.nn.batch_normalization(
+    #             input, mean, var, beta, gamma, eps, name=name
+    #         )
+
+    #     return output
+
     def create_convolution_layer(
         self,
         input,
-        filters, f_h, f_w, in_chnnales,
-        strides,
+        filters, f_h, f_w,
+        stride,
         padding,
         batch_norm,
         activation,
+        is_training=False,
+        filter_initializer=tf.variance_scaling_initializer,
         name = None):
         '''
         Create a convolution layer.
         Arguments:
         Returns:
         '''
-        pass
-    def create_modle(self, cfg_path):
+
+        in_channels = input.shape[-1]
+        padding = 'same' if 1 == padding and 1 == stride else 'valid'
+
+        with tf.variable_scope(name):
+            # Get filter weight
+            filter = tf.get_variable(
+                'kernel', 
+                shape=[f_h, f_w, in_channels, filters],
+                initializer=filter_initializer)
+            # Convolution
+            output = tf.nn.conv2d(
+                input,
+                filter,
+                [1, stride, stride, 1],
+                padding,
+                name='conv')
+            
+            if batch_norm:
+                output = self.create_bn_layer(
+                    input,
+                    moving_decay=0.9,
+                    eps=1e-5,
+                    is_training=False,
+                    name='bn'
+                )
+            
+            # activation
+            if activation:
+                if 'relu' == activation:
+                    output = tf.nn.relu(output, name = 'relu')
+                if 'leaky' == activation:
+                    output = tf.nn.relu(output, name = 'leaky')
+
+        return output
+    def create_model(self):
         # Parse model config
-        self.parse_config(cfg_path)
+        self.parse_config(self.flags.cfg)
 
         # Create model by config file
         for index, section in enumerate(self.cfg_sections[1:]):
-            if "convolution" in section:
+            if section.startswith("convolutional"):
+                activation = self.cfg.get(section, 'activation')
                 batch_norm, filters, size, stride, padding = map(
                     lambda x: self.cfg.getint(section, x),
                     ['batch_normalize', 'filters', 'size', 'stride', 'pad']
                 )
-                activation = self.cfg.get(section, 'activation')
-                # print(section)
-                # print(batch_norm)
-                # print(filters)
-                # print(size)
-                # print(stride)
-                # print(padding)
-                # print(activation)
+
             if "local" in section:
                 size, stride, pad, filters = map(
                     lambda x: self.cfg.getint(section, x),

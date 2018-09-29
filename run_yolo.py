@@ -5,14 +5,36 @@ from __future__ import print_function
 import os
 import sys
 import cv2
+import argparse
 import numpy as np
 import tensorflow as tf
 
 from utils.utils import load_pb
+from yolo.yolov1 import DarkNet
 
-S = 7
-B = 3
-Classes = 20
+def define_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--train", action="store_true", default=False,
+        help="Run as train mode.",)
+    parser.add_argument(
+        "--test", action="store_true", default=True,
+        help="Run as test mode.")
+    parser.add_argument(
+        "--cfg", '-c', type=str, default="cfg/yolo.cfg",
+        help="Path to config file for network in darknet type.")
+    parser.add_argument(
+        "--weight", '-w', type=str, default="weights/yolo.weight",
+        help="Path to weight file for network in darknet type.")
+    
+    args = parser.parse_args()
+
+    if args.train and args.test:
+        print("train and test flag cannot be set simultaneously.")
+        sys.exit()
+
+    print(args)
+    return args
 
 def select_classes(box_confidences, class_probs, boxes, threshold=.2):
     '''
@@ -52,54 +74,18 @@ def encode_image(sess, image_path):
     return encode
 
 if "__main__" == __name__:
-    with tf.Session() as sess:
-        load_pb(sys.argv[1])
-        # tensor_name_list = [tensor.name for tensor in tf.get_default_graph().as_graph_def().node]
-        # for tensor_name in tensor_name_list:
-        #     print(tensor_name)
 
-        encoded = encode_image(sess, sys.argv[2])
+    args = define_args()
+    model = DarkNet(args)
+    model.create_model()
 
-        for i in range(1715):
-            print("%.4f " % (encoded[:, i]), end="")
-            if (19 == i % 20):
-                print("\n", end="")
+    # with tf.Session() as sess:
+    #     load_pb(sys.argv[1])
         
         # SxSx20 P(classi | object) SxSx3 confidence SxSx3x4 bbox
-        classes_probs_vector = encoded[:, :S*S*Classes]
-        confidences_vector = encoded[:, S*S*Classes : (S*S*Classes+S*S*3)]
-        boxes_vector = encoded[:, -S*S*3*4:]
-        print(classes_probs_vector.shape)
-        print(confidences_vector.shape)
-        print(boxes_vector.shape)
-
-        for i in range(49):
-            for j in range(3):
-                print("grid{} box{} confidence:{} x:{} y:{} w:{}, h{}".format(
-                    i, j, confidences_vector[:, i*3+j], boxes_vector[:, i*4*j + 0],
-                    boxes_vector[:, i*4*j + 1],
-                    boxes_vector[:, i*4*j + 2],
-                    boxes_vector[:, i*4*j + 3]
-                ))
-
-        # classes_probs = np.reshape(classes_probs_vector, [S, S, Classes])
-        # confidences = np.reshape(confidences_vector, [S, S, B])
-        # boxes = np.reshape(boxes_vector, [S, S, B, 4])
-        # print(classes_probs[0,0,:])
-        # print(classes_probs_vector[:, :Classes])
-        # print(confidences[0,0,:])
-        # print(confidences_vector[:, :B])
-        # print(boxes[0,0,:,:])
-        # print(boxes_vector[:, :12])
-
-        # class_scores = np.zeros([S, S, B, Classes])
-        # for i in range(B):
-        #     class_scores[:, :, i, :] = confidences[:, :, i][:,:,np.newaxis] * classes_probs
-        #     print(class_scores[:, :, i, :].shape)
-        #     # print(class_scores[:, :, i, :])
-        # print(class_scores > .2)
-
-        # encode = np.reshape(encode, [S,S,Classes+5*B, 1])
-        # print(encode.shape)
-        # print(encode[:,:,0])
-
+        # classes_probs_vector = encoded[:, :S*S*Classes]
+        # confidences_vector = encoded[:, S*S*Classes : (S*S*Classes+S*S*3)]
+        # boxes_vector = encoded[:, -S*S*3*4:]
+        # print(classes_probs_vector.shape)
+        # print(confidences_vector.shape)
+        # print(boxes_vector.shape)

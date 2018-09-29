@@ -39,11 +39,6 @@ def make_unique_section_file(path):
                     uni_section_names.append(uni_sec_name)
                     uni_sec_name = "[{}]\n".format(uni_sec_name)
                     uni_sec_cfg.write(uni_sec_name.decode())
-                # # Skip invalid lines
-                # if line.startswith(('#', ' ', '/')):
-                #     continue
-                # Write section contents
-                # if "=" in line or '\n' == line:
                 else:
                     uni_sec_cfg.write(line.decode())
             with open(uni_file_path, 'w') as uni_f:
