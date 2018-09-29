@@ -178,6 +178,36 @@ class DarkNet(object):
                 output = self.activation(output, activation)
 
         return output
+    def create_pooling_layer(
+        self,
+        input,
+        p_h, p_w,
+        pooling_type,
+        stride,
+        padding="VALID",
+        name=None):
+        '''
+        Pooling layer
+        '''
+        with tf.name_scope(name):
+            if 'avg' == pooling_type:
+                output = tf.nn.avg_pool(
+                    input,
+                    (1, p_h, p_w, 1),
+                    (1, stride, stride, 1),
+                    padding,
+                    name='avg_pooling')
+            elif 'max' == pooling_type:
+                output = tf.nn.max_pool(
+                    input,
+                    (1, p_h, p_w, 1),
+                    (1, stride, stride, 1),
+                    padding,
+                    name='avg_pooling')
+            else:
+                raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
+
+        return output
     def create_model(self):
         # Parse model config
         self.parse_config(self.flags.cfg)
