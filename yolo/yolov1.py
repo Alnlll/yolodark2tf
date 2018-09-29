@@ -46,50 +46,50 @@ class DarkNet(object):
         
         # print(self.img_height, self.img_width, self.img_channels)
         # print(self.classes, self.cell_size, self.box_nums)
-    # def create_bn_layer(
-    #     self,
-    #     input,
-    #     moving_decay=0.9,
-    #     eps=1e-5,
-    #     is_training=False,
-    #     name='bn'):
-    #     '''
-    #     Create batch normalization layer
-    #     '''
-    #     with tf.variable_scope(name):
-    #         # Data variance to learn
-    #         gamma = tf.get_variable(
-    #             "gamma", input.shape[-1],
-    #             initializer=tf.constant_initializer(1.0), trainable=True)
-    #         # Data mean to learn
-    #         beta = tf.get_variable(
-    #             "beta", input.shape[-1],
-    #             initializer=tf.constant_initializer(0.0), trainable=True)
+    def create_bn_layer(
+        self,
+        input,
+        moving_decay=0.9,
+        eps=1e-5,
+        is_training=False,
+        name='bn'):
+        '''
+        Create batch normalization layer
+        '''
+        with tf.variable_scope(name):
+            # Data variance to learn
+            gamma = tf.get_variable(
+                "gamma", input.shape[-1],
+                initializer=tf.constant_initializer(1.0), trainable=True)
+            # Data mean to learn
+            beta = tf.get_variable(
+                "beta", input.shape[-1],
+                initializer=tf.constant_initializer(0.0), trainable=True)
 
-    #         # Calculate batch mean and variance
-    #         axises = np.arange(len(input.shape) - 1)
-    #         batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
+            # Calculate batch mean and variance
+            axises = list(range((len(input.shape) - 1)))
+            print(axises)
+            batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
 
-    #         # Moving avergae for mean and variance
-    #         ema = tf.train.ExponentialMovingAverage(decay=moving_decay)
-    #         def mean_var_with_update():
-    #             ema_apply_op = ema.apply([batch_mean, batch_var])
-    #             with tf.control_dependencies([ema_apply_op]):
-    #                  return tf.identity(batch_mean), tf.identity(batch_var)
+            # Moving avergae for mean and variance
+            ema = tf.train.ExponentialMovingAverage(decay=moving_decay)
+            def mean_var_with_update():
+                ema_apply_op = ema.apply([batch_mean, batch_var])
+                with tf.control_dependencies([ema_apply_op]):
+                     return tf.identity(batch_mean), tf.identity(batch_var)
             
-    #         # Update mean and var
-    #         mean, var = tf.cond(
-    #             is_training,
-    #             mean_var_with_update,
-    #             lambda: (ema.average(batch_mean), ema.average(batch_var))
-    #         )
+            # Update mean and var
+            mean, var = tf.cond(
+                tf.equal(is_training, True),
+                mean_var_with_update,
+                lambda: (ema.average(batch_mean), ema.average(batch_var))
+            )
 
-    #         output = tf.nn.batch_normalization(
-    #             input, mean, var, beta, gamma, eps, name=name
-    #         )
+            output = tf.nn.batch_normalization(
+                input, mean, var, beta, gamma, eps, name=name
+            )
 
-    #     return output
-
+        return output
     def create_convolution_layer(
         self,
         input,
@@ -108,7 +108,7 @@ class DarkNet(object):
         '''
 
         in_channels = input.shape[-1]
-        padding = 'same' if 1 == padding and 1 == stride else 'valid'
+        padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
 
         with tf.variable_scope(name):
             # Get filter weight
