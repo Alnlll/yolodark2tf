@@ -208,6 +208,25 @@ class DarkNet(object):
                 raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
 
         return output
+    def create_dropout_layer(
+        self,
+        input,
+        prob,
+        is_training=False,
+        seed=None,
+        name=None):
+        '''
+        Dropout Layer.
+        '''
+        with tf.name_scope(name):
+            input = tf.layers.flatten(input, name='flatten')
+
+            if is_training:
+                output = tf.nn.dropout(input, prob, seed=seed, name='dropout')
+            else:
+                output = input
+
+        return output
     def create_fully_connectd_layer(
         self,
         input,
@@ -246,9 +265,6 @@ class DarkNet(object):
                 output = self.activation(output, activation)
 
         return output
-
-
-
     def create_model(self):
         # Parse model config
         self.parse_config(self.flags.cfg)
