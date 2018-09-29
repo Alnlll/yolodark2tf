@@ -110,7 +110,7 @@ class DarkNet(object):
         batch_norm,
         activation,
         is_training=False,
-        filter_initializer=tf.variance_scaling_initializer,
+        filter_initializer=tf.variance_scaling_initializer(),
         name = None):
         '''
         Create a convolution layer.
@@ -149,41 +149,35 @@ class DarkNet(object):
                 output = self.activation(output, activation)
 
         return output
-    # def create_local_convolution_layer(
-    #     self,
-    #     input,
-    #     filters, f_h, f_w,
-    #     stride,
-    #     padding,
-    #     activation,
-    #     filter_initializer=tf.variance_scaling_initializer,
-    #     name = None):
-    #     ''' 
-    #     Locally-connected layer
-    #     '''
+    def create_local_convolution_layer(
+        self,
+        input,
+        filters, f_h, f_w,
+        stride,
+        padding,
+        activation,
+        filter_initializer=tf.variance_scaling_initializer(),
+        name = None):
+        ''' 
+        Locally-connected layer
+        '''
 
-    #     in_channels = input.shape[-1]
-    #     padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+        # padding, impleme = ('same',2) if 1 == padding and 1 == stride else ('valid',1)
 
-    #     with tf.variable_scope(name):
-    #         # Get filter weight
-    #         filter = tf.get_variable(
-    #             'kernel', 
-    #             shape=[f_h, f_w, in_channels, filters],
-    #             initializer=filter_initializer)
-    #         # Convolution
-    #         output = tf.nn.conv2d(
-    #             input,
-    #             filter,
-    #             [1, stride, stride, 1],
-    #             padding,
-    #             name='conv')
-            
-    #         # activation
-    #         if activation:
-    #             output = self.activation(output, activation)
+        with tf.variable_scope(name):
+            output = tf.keras.layers.LocallyConnected2D(
+                filters=filters,
+                kernel_size=(f_h, f_w),
+                input_shape=input.shape[-3:],
+                strides=(stride, stride),
+                padding='valid',
+                activation=None,
+                kernel_initializer=filter_initializer)(input)
 
-    #     return output
+            if activation:
+                output = self.activation(output, activation)
+
+        return output
     def create_model(self):
         # Parse model config
         self.parse_config(self.flags.cfg)
