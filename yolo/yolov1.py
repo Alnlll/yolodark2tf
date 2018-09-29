@@ -46,6 +46,17 @@ class DarkNet(object):
         
         # print(self.img_height, self.img_width, self.img_channels)
         # print(self.classes, self.cell_size, self.box_nums)
+    def activation(self, input, activation):
+        if 'relu' == activation:
+            output = tf.nn.relu(input, name = 'relu')
+        elif 'leaky' == activation:
+            output = tf.nn.relu(input, name = 'leaky')
+        elif 'linear' == activation:
+            output == input
+        else:
+            raise TypeError("Unknown activation type {}.".format(activation))
+        
+        return output
     def create_bn_layer(
         self,
         input,
@@ -123,7 +134,7 @@ class DarkNet(object):
                 [1, stride, stride, 1],
                 padding,
                 name='conv')
-            
+
             if batch_norm:
                 output = self.create_bn_layer(
                     input,
@@ -132,15 +143,47 @@ class DarkNet(object):
                     is_training=False,
                     name='bn'
                 )
-            
+
             # activation
             if activation:
-                if 'relu' == activation:
-                    output = tf.nn.relu(output, name = 'relu')
-                if 'leaky' == activation:
-                    output = tf.nn.relu(output, name = 'leaky')
+                output = self.activation(output, activation)
 
         return output
+    # def create_local_convolution_layer(
+    #     self,
+    #     input,
+    #     filters, f_h, f_w,
+    #     stride,
+    #     padding,
+    #     activation,
+    #     filter_initializer=tf.variance_scaling_initializer,
+    #     name = None):
+    #     ''' 
+    #     Locally-connected layer
+    #     '''
+
+    #     in_channels = input.shape[-1]
+    #     padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+
+    #     with tf.variable_scope(name):
+    #         # Get filter weight
+    #         filter = tf.get_variable(
+    #             'kernel', 
+    #             shape=[f_h, f_w, in_channels, filters],
+    #             initializer=filter_initializer)
+    #         # Convolution
+    #         output = tf.nn.conv2d(
+    #             input,
+    #             filter,
+    #             [1, stride, stride, 1],
+    #             padding,
+    #             name='conv')
+            
+    #         # activation
+    #         if activation:
+    #             output = self.activation(output, activation)
+
+    #     return output
     def create_model(self):
         # Parse model config
         self.parse_config(self.flags.cfg)
