@@ -18,8 +18,14 @@ class DarkNet(object):
         self.cfg = configparser.ConfigParser()
         self.cfg_sections = None
         self.flags = flags
+
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     def __del__(self):
-        pass
+        del self.cfg
+        del self.cfg_sections
+        del self.flags
+        self.sess.close()
     def parse_config(self, cfg_path):
         if not os.path.exists(cfg_path):
             raise IOError("{} doesn't exists.".format(cfg_path))
@@ -79,7 +85,6 @@ class DarkNet(object):
 
             # Calculate batch mean and variance
             axises = list(range((len(input.shape) - 1)))
-            print(axises)
             batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
 
             # Moving avergae for mean and variance
@@ -137,7 +142,7 @@ class DarkNet(object):
 
             if batch_norm:
                 output = self.create_bn_layer(
-                    input,
+                    output,
                     moving_decay=0.9,
                     eps=1e-5,
                     is_training=False,
@@ -269,6 +274,14 @@ class DarkNet(object):
         # Parse model config
         self.parse_config(self.flags.cfg)
 
+        # Create input placeholder
+        input = tf.placeholder(
+            tf.float32,
+            shape=[None, self.img_height, self.img_width, self.img_channels],
+            name="input")
+        
+        output = input
+
         # Create model by config file
         for index, section in enumerate(self.cfg_sections[1:]):
             if section.startswith("convolutional"):
@@ -278,7 +291,20 @@ class DarkNet(object):
                     ['batch_normalize', 'filters', 'size', 'stride', 'pad']
                 )
 
-            if "local" in section:
+                print("Conv layer {} filters:{} size:{} input shape:{}".format(
+                    section, filters, size, output.shape), end="")
+                output = self.create_convolution_layer(
+                    output,
+                    filters, size, size,
+                    stride,
+                    padding,
+                    batch_norm,
+                    activation,
+                    is_training=self.flags.train,
+                    name=section)
+                print("output shape: {}".format(output.shape))
+
+            if section.startswith("local"):
                 size, stride, pad, filters = map(
                     lambda x: self.cfg.getint(section, x),
                     ['size', 'stride', 'pad', 'filters']
