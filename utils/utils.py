@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # -*- coding=utf-8 -*-
 
+from __future__ import division
+
 import os
+import numpy as np
 from io import StringIO
 import tensorflow as tf
 
@@ -45,3 +48,28 @@ def make_unique_section_file(path):
                 uni_f.write(uni_sec_cfg.getvalue())
 
     return uni_file_path, uni_section_names
+def get_padding_num(input_shape, kernel_size, stride):
+    '''
+    Get number of 0 to be padded.
+    '''
+    paddings = np.zeros([len(input_shape), 2])
+    paddings_fix_odd = np.zeros([len(input_shape), 2])
+    input_shape = np.array(input_shape)
+    kernel_size = np.array(kernel_size)
+
+    # print(input_shape.shape)
+    # print(kernel_size.shape)
+    # print(paddings.shape)
+
+    paddings[:, 0] = np.ceil((kernel_size - 1) / stride / 2)
+    paddings[:, 1] = np.ceil((kernel_size - 1) / stride / 2)
+    
+    # Seem like darknet same padding doesn't fix odd dimension here.
+    # padded_shape = input_shape + 2*paddings[:, 0]
+    # mask = (0 != padded_shape % 2)
+    # paddings[:, 1] += (np.ones(input_shape.shape) * mask)
+
+    # print(paddings)
+    # print(paddings_fix_odd)
+
+    return paddings.astype(int)

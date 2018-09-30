@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 #-*- coding=utf-8 -*-
 
+from __future__ import division
 from __future__ import print_function
 
 import os
@@ -8,10 +9,12 @@ try:
     import ConfigParser as configparser
 except ImportError:
     import configparser
+import math
 import numpy as np
 import tensorflow as tf
 
 from utils.utils import make_unique_section_file
+from utils.utils import get_padding_num
 
 class DarkNet(object):
     def __init__(self, flags):
@@ -58,7 +61,7 @@ class DarkNet(object):
         elif 'leaky' == activation:
             output = tf.nn.relu(input, name = 'leaky')
         elif 'linear' == activation:
-            output == input
+            output = input
         else:
             raise TypeError("Unknown activation type {}.".format(activation))
         
@@ -111,9 +114,9 @@ class DarkNet(object):
         input,
         filters, f_h, f_w,
         stride,
-        padding,
-        batch_norm,
-        activation,
+        padding=None,
+        batch_norm=1,
+        activation='leaky',
         is_training=False,
         filter_initializer=tf.variance_scaling_initializer(),
         name = None):
@@ -124,7 +127,8 @@ class DarkNet(object):
         '''
 
         in_channels = input.shape[-1]
-        padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+        # padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+        padding = 'SAME' if 1== padding else 'VALID'
 
         with tf.variable_scope(name):
             # Get filter weight
@@ -159,17 +163,27 @@ class DarkNet(object):
         input,
         filters, f_h, f_w,
         stride,
-        padding,
-        activation,
+        padding=0,
+        activation='linear',
         filter_initializer=tf.variance_scaling_initializer(),
         name = None):
         ''' 
         Locally-connected layer
         '''
 
+        if 4 != len(input.shape):
+            raise ValueError("Only support 4 dimension input, recieved {} input {}".format(
+                len(input.shape), input))
         # padding, impleme = ('same',2) if 1 == padding and 1 == stride else ('valid',1)
+        padding = 'same' if 1 == padding else 'valid'
 
         with tf.variable_scope(name):
+            # Pre-padding because local layer doesn't support 'same' padding.
+            if 'same' == padding:
+                paddings = get_padding_num(input.shape, [1, f_h, f_w, 1], stride)
+                paddings[0, :], paddings[-1, :] = 0, 0
+                input = tf.pad(input, tf.constant(paddings), name='pad')
+
             output = tf.keras.layers.LocallyConnected2D(
                 filters=filters,
                 kernel_size=(f_h, f_w),
@@ -291,8 +305,8 @@ class DarkNet(object):
                     ['batch_normalize', 'filters', 'size', 'stride', 'pad']
                 )
 
-                print("Conv layer {} filters:{} size:{} input shape:{}".format(
-                    section, filters, size, output.shape), end="")
+                print("{} Conv layer {} filters:{} size:{}x{} / {} input shape:{} ".format(
+                    index, section, filters, size, size, stride, output.shape), end="")
                 output = self.create_convolution_layer(
                     output,
                     filters, size, size,
@@ -310,31 +324,65 @@ class DarkNet(object):
                     ['size', 'stride', 'pad', 'filters']
                 )
                 activation = self.cfg.get(section, 'activation')
-                # print(section)
-                # print(size)
-                # print(stride)
-                # print(padding)
-                # print(filters)
-                # print(activation)
 
-            if "maxpool" in section:
+                print("{} Local layer {} filters:{} size:{}x{} input shape:{} ".format(
+                    index, section, filters, size, size, output.shape), end="")
+
+                output = self.create_local_convolution_layer(
+                    output,
+                    filters, size, size,
+                    stride,
+                    pad,
+                    activation,
+                    name=section)
+                print("output shape: {}".format(output.shape))
+
+            if "pool" in section:
                 size, stride = map(
                     lambda x: self.cfg.getint(section, x),
-                    ['size', 'stride']
-                )
-                # print(section)
-                # print(size, stride)
+                    ['size', 'stride'])
+                print("{} Pool layer {} size:{}x{} / {} input shape:{} ".format(
+                    index, section, size, size, stride, output.shape), end="")
+
+                if 'maxpool' == section:
+                    pooling_type = 'max'
+                else:
+                    pooling_type = 'avg'
+                output = self.create_pooling_layer(
+                    output,
+                    size, size,
+                    pooling_type,
+                    stride,
+                    padding='VALID',
+                    name=section)
+                print("output shape: {}".format(output.shape))
 
             if "dropout" in section:
                 prob = self.cfg.getfloat(section, 'probability')
-                # print(section)
-                # print(prob)
+                print("{} Dropout layer {} prob:{} input shape:{} ".format(
+                    index, section, prob, output.shape), end="")
+                output = self.create_dropout_layer(
+                    output,
+                    prob,
+                    is_training=self.flags.train,
+                    seed=None,
+                    name=section)
+                print("output shape: {}".format(output.shape))
 
             if "connected" in section:
                 n_out = self.cfg.getint(section, 'output')
                 activation = self.cfg.get(section, 'activation')
-                # print(section)
-                # print(n_out)
-                # print(activation)
+
+                print("{} Fc layer {} outnum:{} input shape:{} ".format(
+                    index, section, n_out, output.shape), end="")
+
+                output = self.create_fully_connectd_layer(
+                    output,
+                    n_out,
+                    activation=activation,
+                    name=section)
+                print("output shape: {}".format(output.shape))
+            print()
+
     def load_weight(self, weight_path):
         pass
