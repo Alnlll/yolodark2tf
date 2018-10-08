@@ -53,7 +53,7 @@ def get_padding_num(input_shape, kernel_size, stride):
     Get number of 0 to be padded.
     '''
     paddings = np.zeros([len(input_shape), 2])
-    paddings_fix_odd = np.zeros([len(input_shape), 2])
+    # paddings_fix_odd = np.zeros([len(input_shape), 2])
     input_shape = np.array(input_shape)
     kernel_size = np.array(kernel_size)
 

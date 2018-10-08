@@ -18,43 +18,96 @@ from utils.utils import get_padding_num
 
 class DarkNet(object):
     def __init__(self, flags):
-        self.cfg = configparser.ConfigParser()
-        self.cfg_sections = None
+        self.cfg_parser = configparser.ConfigParser()
+        self.sections = None
+        self.params = {}
+        self.configs = {}
         self.flags = flags
 
         gpu_options = tf.GPUOptions(allow_growth=True)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     def __del__(self):
-        del self.cfg
-        del self.cfg_sections
+        del self.cfg_parser
+        del self.sections
+        del self.params
+        del self.configs
         del self.flags
         self.sess.close()
     def parse_config(self, cfg_path):
         if not os.path.exists(cfg_path):
             raise IOError("{} doesn't exists.".format(cfg_path))
         # Get cfg file with unique section name
-        uni_cfg_path, self.cfg_sections = make_unique_section_file(cfg_path)
+        uni_cfg_path, self.sections = make_unique_section_file(cfg_path)
         # Read cfg file
-        self.cfg.read(uni_cfg_path)
+        self.cfg_parser.read(uni_cfg_path)
 
         # Get input image info
         try:
-            self.img_height = self.cfg.getint(self.cfg_sections[0], "height")
-            self.img_width = self.cfg.getint(self.cfg_sections[0], "width")
-            self.img_channels = self.cfg.getint(self.cfg_sections[0], "channels")
+            self.img_height = self.cfg_parser.getint(self.sections[0], "height")
+            self.img_width = self.cfg_parser.getint(self.sections[0], "width")
+            self.img_channels = self.cfg_parser.getint(self.sections[0], "channels")
         except Exception as e:
             raise ValueError(e)
         
         # Get output feature map info
         try:
-            self.classes = self.cfg.getint(self.cfg_sections[-1], "classes")
-            self.cell_size = self.cfg.getint(self.cfg_sections[-1], "side")
-            self.box_nums = self.cfg.getint(self.cfg_sections[-1], "num")
+            self.classes = self.cfg_parser.getint(self.sections[-1], "classes")
+            self.cell_size = self.cfg_parser.getint(self.sections[-1], "side")
+            self.box_nums = self.cfg_parser.getint(self.sections[-1], "num")
         except Exception as e:
             raise ValueError(e)
-        
+
         # print(self.img_height, self.img_width, self.img_channels)
         # print(self.classes, self.cell_size, self.box_nums)
+
+        for section in self.sections[1:]:
+            if section.startswith("convolutional"):
+                activation = self.cfg_parser.get(section, 'activation')
+                batch_norm, filters, size, stride, padding = map(
+                    lambda x: self.cfg_parser.getint(section, x),
+                    ['batch_normalize', 'filters', 'size', 'stride', 'pad']
+                )
+                self.configs[section] = {
+                    'filters': filters, 'size': size, 'stride': stride, 'padding': padding,
+                    'bn': batch_norm, 'activation': activation}
+
+            if section.startswith("local"):
+                size, stride, padding, filters = map(
+                    lambda x: self.cfg_parser.getint(section, x),
+                    ['size', 'stride', 'pad', 'filters']
+                )
+                activation = self.cfg_parser.get(section, 'activation')
+
+                self.configs[section] = {
+                    'filters': filters, 'size': size, 'stride': stride, 'padding': padding,
+                    'activation': activation}
+
+            if "pool" in section:
+                size, stride = map(
+                    lambda x: self.cfg_parser.getint(section, x),
+                    ['size', 'stride'])
+                if 'maxpool' in section:
+                    pooling_type = 'max'
+                else:
+                    pooling_type = 'avg'
+                
+                self.configs[section] = {
+                    'size': size, 'stride': stride, "type": pooling_type}
+
+            if "dropout" in section:
+                prob = self.cfg_parser.getfloat(section, 'probability')
+                self.configs[section] = {
+                    'prob': prob}
+
+            if "connected" in section:
+                n_out = self.cfg_parser.getint(section, 'output')
+                activation = self.cfg_parser.get(section, 'activation')
+
+                self.configs[section] = {
+                    'out': n_out, 'activation': activation}
+
+        # for section in self.sections[1:-1]:
+        #     print(section, ":\n", self.configs[section])
     def activation(self, input, activation):
         if 'relu' == activation:
             output = tf.nn.relu(input, name = 'relu')
@@ -103,12 +156,11 @@ class DarkNet(object):
                 mean_var_with_update,
                 lambda: (ema.average(batch_mean), ema.average(batch_var))
             )
-
             output = tf.nn.batch_normalization(
                 input, mean, var, beta, gamma, eps, name=name
             )
 
-        return output
+        return output, mean, var, beta, gamma
     def create_convolution_layer(
         self,
         input,
@@ -119,6 +171,8 @@ class DarkNet(object):
         activation='leaky',
         is_training=False,
         filter_initializer=tf.variance_scaling_initializer(),
+        use_bias=False,
+        bias_initializer=tf.variance_scaling_initializer(),
         name = None):
         '''
         Create a convolution layer.
@@ -136,6 +190,8 @@ class DarkNet(object):
                 'kernel', 
                 shape=[f_h, f_w, in_channels, filters],
                 initializer=filter_initializer)
+            self.params[name] = {'kernel': filter}
+            print("\n",filter)
             # Convolution
             output = tf.nn.conv2d(
                 input,
@@ -143,15 +199,25 @@ class DarkNet(object):
                 [1, stride, stride, 1],
                 padding,
                 name='conv')
+            if use_bias:
+                bias = tf.get_variable(
+                    'bias',
+                    shape = [filters],
+                    initializer=bias_initializer
+                )
+                self.params[name] = {'bias': bias}
+                output = tf.add(output, bias)
 
             if batch_norm:
-                output = self.create_bn_layer(
+                output, mean, var, beta, gamma = self.create_bn_layer(
                     output,
                     moving_decay=0.9,
                     eps=1e-5,
                     is_training=False,
                     name='bn'
                 )
+                self.params[name]['bn'] = {
+                    'mean': mean, 'var': var, 'beta': beta, 'gamma': gamma}
 
             # activation
             if activation:
@@ -192,6 +258,10 @@ class DarkNet(object):
                 padding='valid',
                 activation=None,
                 kernel_initializer=filter_initializer)(input)
+
+            kernel = self.sess.graph.get_tensor_by_name("{}/locally_connected2d/kernel:0".format(name))
+            bias = self.sess.graph.get_tensor_by_name("{}/locally_connected2d/bias:0".format(name))
+            self.params[name] = {'kernel': kernel, 'bias': bias}
 
             if activation:
                 output = self.activation(output, activation)
@@ -297,92 +367,71 @@ class DarkNet(object):
         output = input
 
         # Create model by config file
-        for index, section in enumerate(self.cfg_sections[1:]):
+        for index, section in enumerate(self.sections[1:]):
             if section.startswith("convolutional"):
-                activation = self.cfg.get(section, 'activation')
-                batch_norm, filters, size, stride, padding = map(
-                    lambda x: self.cfg.getint(section, x),
-                    ['batch_normalize', 'filters', 'size', 'stride', 'pad']
-                )
-
-                print("{} Conv layer {} filters:{} size:{}x{} / {} input shape:{} ".format(
-                    index, section, filters, size, size, stride, output.shape), end="")
                 output = self.create_convolution_layer(
                     output,
-                    filters, size, size,
-                    stride,
-                    padding,
-                    batch_norm,
-                    activation,
+                    self.configs[section]['filters'],
+                    self.configs[section]['size'],
+                    self.configs[section]['size'],
+                    self.configs[section]['stride'],
+                    self.configs[section]['padding'],
+                    bool(self.configs[section]['bn']),
+                    self.configs[section]['activation'],
+                    use_bias=not self.configs[section]['bn'],
                     is_training=self.flags.train,
                     name=section)
                 print("output shape: {}".format(output.shape))
 
             if section.startswith("local"):
-                size, stride, pad, filters = map(
-                    lambda x: self.cfg.getint(section, x),
-                    ['size', 'stride', 'pad', 'filters']
-                )
-                activation = self.cfg.get(section, 'activation')
-
-                print("{} Local layer {} filters:{} size:{}x{} input shape:{} ".format(
-                    index, section, filters, size, size, output.shape), end="")
-
                 output = self.create_local_convolution_layer(
                     output,
-                    filters, size, size,
-                    stride,
-                    pad,
-                    activation,
+                    self.configs[section]['filters'],
+                    self.configs[section]['size'],
+                    self.configs[section]['size'],
+                    self.configs[section]['stride'],
+                    self.configs[section]['padding'],
+                    self.configs[section]['activation'],
                     name=section)
                 print("output shape: {}".format(output.shape))
 
             if "pool" in section:
-                size, stride = map(
-                    lambda x: self.cfg.getint(section, x),
-                    ['size', 'stride'])
-                print("{} Pool layer {} size:{}x{} / {} input shape:{} ".format(
-                    index, section, size, size, stride, output.shape), end="")
-
-                if 'maxpool' == section:
-                    pooling_type = 'max'
-                else:
-                    pooling_type = 'avg'
                 output = self.create_pooling_layer(
                     output,
-                    size, size,
-                    pooling_type,
-                    stride,
+                    self.configs[section]['size'],
+                    self.configs[section]['size'],
+                    self.configs[section]['type'],
+                    self.configs[section]['stride'],
                     padding='VALID',
                     name=section)
                 print("output shape: {}".format(output.shape))
 
             if "dropout" in section:
-                prob = self.cfg.getfloat(section, 'probability')
-                print("{} Dropout layer {} prob:{} input shape:{} ".format(
-                    index, section, prob, output.shape), end="")
                 output = self.create_dropout_layer(
                     output,
-                    prob,
+                    self.configs[section]['prob'],
                     is_training=self.flags.train,
                     seed=None,
                     name=section)
                 print("output shape: {}".format(output.shape))
 
             if "connected" in section:
-                n_out = self.cfg.getint(section, 'output')
-                activation = self.cfg.get(section, 'activation')
-
-                print("{} Fc layer {} outnum:{} input shape:{} ".format(
-                    index, section, n_out, output.shape), end="")
-
                 output = self.create_fully_connectd_layer(
                     output,
-                    n_out,
-                    activation=activation,
+                    self.configs[section]['out'],
+                    activation=self.configs[section]['activation'],
                     name=section)
                 print("output shape: {}".format(output.shape))
             print()
+    def load_weight(self):
+        if not os.path.exists(self.flags.weight):
+            raise IOError("{} doesn't exist.".format(self.flags.weight))
+        
+        with open(self.flags.weight, 'rb') as f:
+            self.header = np.fromfile(f, dtype=np.int32, count=5)
+            self.seen = self.header[3]
 
-    def load_weight(self, weight_path):
-        pass
+            print(self.header)
+            print(self.seen)
+
+            weights = np.fromfile(f, dtype=np.float32)

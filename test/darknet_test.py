@@ -175,5 +175,17 @@ class TestDarkNet(unittest.TestCase):
         model = DarkNet(flags)
         model.create_model()
 
+    def test_darknet_load_weight_file_not_exists(self):
+        flags = mock.Mock()
+        flags.weight = "weights/yolov1.weight"
+        model = DarkNet(flags)
+        self.assertRaises(IOError, model.load_weight)
+    
+    def test_darknet_load_weight_header(self):
+        flags = mock.Mock()
+        flags.weight = "../weights/yolov3.weights"
+        model = DarkNet(flags)
+        model.load_weight()
+
 if "__main__" == __name__:
     unittest.main()
