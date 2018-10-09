@@ -122,45 +122,56 @@ class DarkNet(object):
     def create_bn_layer(
         self,
         input,
-        moving_decay=0.9,
-        eps=1e-5,
+        # moving_decay=0.9,
+        # eps=1e-5,
         is_training=False,
         name='bn'):
         '''
         Create batch normalization layer
         '''
-        with tf.variable_scope(name):
-            # Data variance to learn
-            gamma = tf.get_variable(
-                "gamma", input.shape[-1],
-                initializer=tf.constant_initializer(1.0), trainable=True)
-            # Data mean to learn
-            beta = tf.get_variable(
-                "beta", input.shape[-1],
-                initializer=tf.constant_initializer(0.0), trainable=True)
+        # with tf.variable_scope(name):
+        output = tf.layers.batch_normalization(
+            input,
+            training=is_training
+            # name='bn'
+        )
 
-            # Calculate batch mean and variance
-            axises = list(range((len(input.shape) - 1)))
-            batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
+        # gamma, beta, mean, var = 
+        # gamma = self.sess.get_tensor_by_name("{}/batch_normalization/gamma:0".format())
+        
+        # return output
+            # # Data variance to learn
+            # gamma = tf.get_variable(
+            #     "gamma", input.shape[-1],
+            #     initializer=tf.constant_initializer(1.0), trainable=True)
+            # # Data mean to learn
+            # beta = tf.get_variable(
+            #     "beta", input.shape[-1],
+            #     initializer=tf.constant_initializer(0.0), trainable=True)
 
-            # Moving avergae for mean and variance
-            ema = tf.train.ExponentialMovingAverage(decay=moving_decay)
-            def mean_var_with_update():
-                ema_apply_op = ema.apply([batch_mean, batch_var])
-                with tf.control_dependencies([ema_apply_op]):
-                     return tf.identity(batch_mean), tf.identity(batch_var)
+            # # Calculate batch mean and variance
+            # axises = list(range((len(input.shape) - 1)))
+            # batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
+
+            # # Moving avergae for mean and variance
+            # ema = tf.train.ExponentialMovingAverage(decay=moving_decay)
+            # def mean_var_with_update():
+            #     ema_apply_op = ema.apply([batch_mean, batch_var])
+            #     with tf.control_dependencies([ema_apply_op]):
+            #          return tf.identity(batch_mean), tf.identity(batch_var)
             
-            # Update mean and var
-            mean, var = tf.cond(
-                tf.equal(is_training, True),
-                mean_var_with_update,
-                lambda: (ema.average(batch_mean), ema.average(batch_var))
-            )
-            output = tf.nn.batch_normalization(
-                input, mean, var, beta, gamma, eps, name=name
-            )
+            # # Update mean and var
+            # mean, var = tf.cond(
+            #     tf.equal(is_training, True),
+            #     mean_var_with_update,
+            #     lambda: (ema.average(batch_mean), ema.average(batch_var))
+            # )
+            # print(mean, var)
+            # output = tf.nn.batch_normalization(
+            #     input, mean, var, beta, gamma, eps, name=name
+            # )
 
-        return output, mean, var, beta, gamma
+        return output
     def create_convolution_layer(
         self,
         input,
@@ -190,7 +201,7 @@ class DarkNet(object):
                 'kernel', 
                 shape=[f_h, f_w, in_channels, filters],
                 initializer=filter_initializer)
-            self.params[name] = {'kernel': filter}
+            self.params[name] = {'kernel': filter, 'weight_shape': [f_h, f_w, in_channels, filters]}
             print("\n",filter)
             # Convolution
             output = tf.nn.conv2d(
@@ -205,23 +216,40 @@ class DarkNet(object):
                     shape = [filters],
                     initializer=bias_initializer
                 )
-                self.params[name] = {'bias': bias}
+                self.params[name]['bias'] = bias
                 output = tf.add(output, bias)
 
             if batch_norm:
-                output, mean, var, beta, gamma = self.create_bn_layer(
+                # output = self.create_bn_layer(
+                #     output,
+                #     # moving_decay=0.9,
+                #     # eps=1e-5,
+                #     is_training=False,
+                #     name='bn'
+                # )
+                output = tf.layers.batch_normalization(
                     output,
-                    moving_decay=0.9,
-                    eps=1e-5,
-                    is_training=False,
-                    name='bn'
+                    training=is_training
+                    # name='bn'
                 )
-                self.params[name]['bn'] = {
-                    'mean': mean, 'var': var, 'beta': beta, 'gamma': gamma}
+
+                # gamma = self.sess.graph.get_tensor_by_name("{}/batch_normalization/gamma:0".format(name))
+                # beta = self.sess.graph.get_tensor_by_name("{}/batch_normalization/beta:0".format(name))
+                # mean = self.sess.graph.get_tensor_by_name("{}/batch_normalization/moving_mean:0".format(name))
+                # var = self.sess.graph.get_tensor_by_name("{}/batch_normalization/moving_variance:0".format(name))
+
+                # print(gamma, beta, mean, var)
+
+                # print(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
+                # print(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
+                # self.params[name]['bn'] = {
+                #     'mean': mean, 'var': var, 'beta': beta, 'gamma': gamma}
 
             # activation
             if activation:
                 output = self.activation(output, activation)
+
+            self.params[name]['output_shape'] = output.shape
 
         return output
     def create_local_convolution_layer(
@@ -259,12 +287,16 @@ class DarkNet(object):
                 activation=None,
                 kernel_initializer=filter_initializer)(input)
 
-            kernel = self.sess.graph.get_tensor_by_name("{}/locally_connected2d/kernel:0".format(name))
-            bias = self.sess.graph.get_tensor_by_name("{}/locally_connected2d/bias:0".format(name))
-            self.params[name] = {'kernel': kernel, 'bias': bias}
+            # kernel = self.sess.graph.get_tensor_by_name("{}/locally_connected2d/kernel:0".format(name))
+            # bias = self.sess.graph.get_tensor_by_name("{}/locally_connected2d/bias:0".format(name))
+            self.params[name] = {
+                'weight_shape': (f_h, f_w, input.shape[-1], filters),
+                'output_shape': output.shape}
 
             if activation:
                 output = self.activation(output, activation)
+
+        print(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
 
         return output
     def create_pooling_layer(
@@ -332,6 +364,8 @@ class DarkNet(object):
         with tf.variable_scope(name):
             # Do flatten
             input = tf.layers.flatten(input, name='flatten')
+
+            print(input.shape)
             # Get weight
             n_in = input.shape[-1]
             W = tf.get_variable(
@@ -339,6 +373,7 @@ class DarkNet(object):
                 [n_in, n_out],
                 initializer=weight_initializer,
                 dtype=tf.float32)
+            self.params[name] = {'weight': W, 'weight_shape': [n_in, n_out]}
             # Get bias
             if use_bias:
                 b = tf.get_variable(
@@ -346,12 +381,15 @@ class DarkNet(object):
                     [n_out],
                     initializer=bias_initializer,
                     dtype=tf.float32)
+                self.params[name]['bias'] = b
                 output = tf.nn.bias_add(tf.matmul(input, W), b)
             else:
                 output = tf.matmul(input, W)
 
             if activation:
                 output = self.activation(output, activation)
+
+            self.params[name]['output_shape'] = output.shape
 
         return output
     def create_model(self):
@@ -423,6 +461,91 @@ class DarkNet(object):
                     name=section)
                 print("output shape: {}".format(output.shape))
             print()
+        # print(self.params)
+
+    def load_conv_weight(self, section, config, ptr, weights):
+        # shape of kernel
+        f_h, f_w, prev_c, filters = self.params[section]['weight_shape']
+        # kernel variable size
+        num = f_h * f_w * prev_c * filters
+
+        assign_ops = []
+        with tf.variable_scope(section, reuse=True):
+            if config['bn']:
+                beta = tf.get_variable("batch_normalization/beta")
+                # assign_ops.append(tf.assign(beta, weights[ptr:ptr + filters]))
+                assign_ops.append(beta.assign(weights[ptr:ptr+filters]))
+                ptr += filters
+
+                gamma = tf.get_variable("batch_normalization/gamma")
+                assign_ops.append(gamma.assign(weights[ptr:ptr + filters]))
+                ptr += filters
+
+                mean = tf.get_variable("batch_normalization/moving_mean")
+                assign_ops.append(mean.assign(weights[ptr:ptr + filters]))
+                ptr += filters
+
+                var = tf.get_variable("batch_normalization/moving_variance")
+                assign_ops.append(var.assign(weights[ptr:ptr + filters]))
+                ptr += filters
+
+                kernel = tf.get_variable("kernel")
+                kernel_data = weights[ptr:ptr + num].reshape(self.params[section]['kernel'].shape)
+                assign_ops.append(kernel.assign(kernel_data))
+                ptr += num
+            else:
+                bias = tf.get_variable("bias")
+                assign_ops.append(bias.assign(weights[ptr:ptr + filters]))
+                ptr += filters
+
+                kernel = tf.get_variable("kernel")
+                assign_ops.append(kernel.assign(weights[ptr:ptr + num]))
+                ptr += num
+        self.sess.run(assign_ops)
+        
+        return ptr
+
+    def load_local_conv_weight(self, section, config, ptr, weights):
+        f_h, f_w, prev_c, filters = self.params[section]['weight_shape']
+        _, o_h, o_w, _ = self.params[section]['output_shape']
+
+        # local conv locations
+        n_locs = o_h * o_w
+        # kernel size
+        size = f_h * f_w * prev_c * filters * n_locs
+
+        assign_ops = []
+        with tf.variable_scope(section, reuse=True):
+            # bias = tf.get_variable("locally_connected2d/bias")
+            bias = tf.Variable("locally_connected2d/bias")
+            assign_ops.append(bias.assign(weights[ptr:ptr + n_locs].tostring()))
+            ptr += n_locs
+            
+            kernel = tf.Variable("locally_connected2d/kernel")
+            assign_ops.append(kernel.assign(weights[ptr:ptr + size].tostring()))
+            ptr += size
+        
+        self.sess.run(assign_ops)
+        return ptr
+
+    def load_fc_weight(self, section, config, ptr, weights):
+        n_in, n_out = self.params[section]['weight_shape']
+
+        print(n_in, n_out)
+        assign_ops = []
+        with tf.variable_scope(section, reuse=True):
+            bias = tf.get_variable("bias")
+            assign_ops.append(bias.assign(weights[ptr:ptr + n_out]))
+            ptr += n_out
+
+            weight = tf.get_variable("weight")
+            weight_data = weights[ptr:ptr + n_out*n_in].reshape(weight.shape)
+            assign_ops.append(weight.assign(weight_data))
+            ptr += n_out * n_in
+
+        self.sess.run(assign_ops)
+        return ptr
+
     def load_weight(self):
         if not os.path.exists(self.flags.weight):
             raise IOError("{} doesn't exist.".format(self.flags.weight))
@@ -431,7 +554,24 @@ class DarkNet(object):
             self.header = np.fromfile(f, dtype=np.int32, count=5)
             self.seen = self.header[3]
 
-            print(self.header)
-            print(self.seen)
-
             weights = np.fromfile(f, dtype=np.float32)
+            ptr = 5
+
+            # load weight doesn't run out of weight file, have no idea about remaining data.
+            for index,section in enumerate(self.sections):
+                prev_ptr = ptr
+                if section.startswith("convolutional"):
+                    config = self.configs[section]
+                    ptr = self.load_conv_weight(section, config, ptr, weights)
+
+                if section.startswith("local"):
+                    config = self.configs[section]
+                    ptr = self.load_local_conv_weight(section, config, ptr, weights)
+                    
+                if section.startswith("connected"):
+                    config = self.configs[section]
+                    ptr = self.load_fc_weight(section, config, ptr, weights)
+
+                # print("layer {} load {}/{} weight data".format(section, ptr, weights.shape[0]))
+                print("{} layer {} load {} float data\n".format(index, section, ptr-prev_ptr))
+            print("remaining {} data".format(weights.shape[0] - ptr))

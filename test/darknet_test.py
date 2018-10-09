@@ -167,13 +167,13 @@ class TestDarkNet(unittest.TestCase):
             y.shape,
             tf.TensorShape([tf.Dimension(1), tf.Dimension(10), tf.Dimension(10), tf.Dimension(64)]))
     
-    def test_darknet_create_model(self):
-        flags = mock.Mock()
-        flags.cfg = "../cfg/yolov1.cfg"
-        flags.train = True
+    # def test_darknet_create_model(self):
+    #     flags = mock.Mock()
+    #     flags.cfg = "../cfg/yolov1.cfg"
+    #     flags.train = True
         
-        model = DarkNet(flags)
-        model.create_model()
+    #     model = DarkNet(flags)
+    #     model.create_model()
 
     def test_darknet_load_weight_file_not_exists(self):
         flags = mock.Mock()
@@ -183,8 +183,11 @@ class TestDarkNet(unittest.TestCase):
     
     def test_darknet_load_weight_header(self):
         flags = mock.Mock()
-        flags.weight = "../weights/yolov3.weights"
+        flags.cfg = "../cfg/yolov1.cfg"
+        flags.weight = "../weights/yolov1.weights"
+        flags.train = False
         model = DarkNet(flags)
+        model.create_model()
         model.load_weight()
 
 if "__main__" == __name__:
