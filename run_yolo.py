@@ -26,6 +26,12 @@ def define_args():
     parser.add_argument(
         "--weight", '-w', type=str, default="weights/yolo.weight",
         help="Path to weight file for network in darknet type.")
+    parser.add_argument(
+        "--image", '-i', type=str, default="data/test.jpg",
+        help="Path to image to be detected.")
+    parser.add_argument(
+        "--video", '-v', type=str, default="data/video.avi",
+        help="Path to vedio to be detected.")
     
     args = parser.parse_args()
 

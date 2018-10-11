@@ -73,3 +73,49 @@ def get_padding_num(input_shape, kernel_size, stride):
     # print(paddings_fix_odd)
 
     return paddings.astype(int)
+def print_conv_layer_params(
+    kernel_size, stride, padding, bn, activation, input_shape, output_shape, name="Convlayer"):
+    f_h, f_w, _, filters = kernel_size
+    print("name:{} size:{}x{} / {} filters:{} padding:{} bn:{} activation:{} shape:{}->{}".format(
+        format(name, '<20s'),
+        format(f_h, 'd'),
+        format(f_w, 'd'),
+        format(stride, '<5d'),
+        format(filters, '<10d'),
+        format(padding, '<10s'),
+        format(bn, "<4b"),
+        format(activation, '<10s'),
+        input_shape,
+        output_shape
+    ))
+def print_pooling_layer_params(
+    pooling_size, stride, padding, pooling_type, input_shape, output_shape, name="PoolingLayer"):
+    p_h, p_w = pooling_size
+    print("name:{} size:{}x{} / {} padding:{} type:{} shape:{}->{}".format(
+        format(name, '<20s'),
+        format(p_h, 'd'),
+        format(p_w, 'd'),
+        format(stride, '<5d'),
+        format(padding, '<10s'),
+        format(pooling_type, "<10s"),
+        input_shape,
+        output_shape
+    ))
+def print_dropout_layer_params(
+    prob, input_shape, output_shape, name="DropoutLayer"):
+    print("name:{} prob:{} shape:{}->{}".format(
+        format(name, '<20s'),
+        format(prob, '<10.4f'),
+        input_shape,
+        output_shape
+    ))
+def print_fc_layer_params(
+    weight_shape, activation, input_shape, output_shape, name="FCLayer"):
+    print("name:{} weight:{}x{} activation:{} shape:{}->{}".format(
+        format(name, '<20s'),
+        format(weight_shape[0], 'd'),
+        format(weight_shape[1], '<5d'),
+        format(activation, '<10s'),
+        input_shape,
+        output_shape
+    ))
