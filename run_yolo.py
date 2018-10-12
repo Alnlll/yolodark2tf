@@ -32,6 +32,10 @@ def define_args():
     parser.add_argument(
         "--video", '-v', type=str, default="data/video.avi",
         help="Path to vedio to be detected.")
+    parser.add_argument(
+        "--summary", '-s', type=str, default="",
+        help="Path of summary logs."
+    )
     
     args = parser.parse_args()
 

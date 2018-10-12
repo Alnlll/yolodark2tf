@@ -10,6 +10,7 @@ try:
     import ConfigParser as configparser
 except ImportError:
     import configparser
+import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.python import debug as tf_debug
@@ -21,6 +22,11 @@ from utils.utils import print_pooling_layer_params
 from utils.utils import print_dropout_layer_params
 from utils.utils import print_fc_layer_params
 from yolo_utils import select_boxes_by_classes_prob
+from yolo_utils import non_max_suppression
+
+_LEAK_RATIO = .1
+_BATCH_NORM_DECAY = .9
+_BATCH_NORM_EPSILON = 1e-05
 
 class DarkNet(object):
     def __init__(self, flags):
@@ -28,14 +34,33 @@ class DarkNet(object):
         self.sections = None
         self.params = {}
         self.configs = {}
+        self.verbose = True
         self.flags = flags
+
+        self.classes_names = ["aeroplane", "bicycle", "bird", "boat", "bottle",
+                            "bus", "car", "cat", "chair", "cow", "diningtable",
+                            "dog", "horse", " ", "person", "pottedplant",
+                            "sheep", "sofa", "train","tvmonitor"]
 
         gpu_options = tf.GPUOptions(allow_growth=True)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
+        # Parse cfg file
+        self._parse_config(self.flags.cfg)
+
         # Construct network and load weight
-        self.input, self.output = self._load_model()
-        self._load_model_weight()
+        self.input, self.encoding, self.processed_image= self._build_network()
+
+        # Post process encoding
+        scores, boxes, classes = self._build_detector(self.encoding)
+
+        # Define detect function
+        self.detect_func = lambda image: self.sess.run(
+            [scores, boxes, classes], feed_dict={self.input: image})
+
+        # Get summary writer
+        if self.flags.summary:
+            writer = tf.summary.FileWriter(self.flags.summary, self.sess.graph)
         # self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
     def __del__(self):
         del self.cfg_parser
@@ -123,12 +148,12 @@ class DarkNet(object):
         if 'relu' == activation:
             output = tf.nn.relu(input, name = 'relu')
         elif 'leaky' == activation:
-            output = tf.nn.relu(input, name = 'leaky')
+            output = tf.nn.leaky_relu(input, alpha=_LEAK_RATIO, name = 'leaky')
         elif 'linear' == activation:
             output = input
         else:
             raise TypeError("Unknown activation type {}.".format(activation))
-        
+
         return output
     def _create_bn_layer(
         self,
@@ -185,7 +210,7 @@ class DarkNet(object):
         return output
     def _create_convolution_layer(
         self,
-        input,
+        inputs,
         filters, f_h, f_w,
         stride,
         padding=None,
@@ -202,49 +227,60 @@ class DarkNet(object):
         Returns:
         '''
 
-        in_channels = input.shape[-1]
+        in_channels = inputs.shape[-1]
         # padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
-        padding = 'SAME' if 1== padding else 'VALID'
+        padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+
+        # print(inputs)
+        # print(filters)
+        # print(stride)
+        # print(padding)
+        # print(batch_norm)
+        # print(is_training)
+        # print(use_bias)
 
         with tf.variable_scope(name):
-            # Get filter weight
-            filter = tf.get_variable(
-                'kernel', 
-                shape=[f_h, f_w, in_channels, filters],
-                initializer=filter_initializer)
-            self.params[name] = {'kernel': filter, 'weight_shape': [f_h, f_w, in_channels, filters]}
-            # Convolution
-            output = tf.nn.conv2d(
-                input,
-                filter,
-                [1, stride, stride, 1],
-                padding,
-                name='conv')
+            self.params[name] = {'weight_shape': [f_h, f_w, in_channels, filters]}
             if use_bias:
-                bias = tf.get_variable(
-                    'bias',
-                    shape = [filters],
-                    initializer=bias_initializer
-                )
-                self.params[name]['bias'] = bias
-                output = tf.add(output, bias)
+                output = tf.layers.conv2d(
+                    inputs,
+                    filters,
+                    (f_h, f_w),
+                    strides=(stride, stride),
+                    padding=padding,
+                    use_bias=True,
+                    kernel_initializer=filter_initializer,
+                    bias_initializer=bias_initializer)
+            else:
+                output = tf.layers.conv2d(
+                    inputs,
+                    filters,
+                    (f_h, f_w),
+                    strides=(stride, stride),
+                    padding=padding,
+                    use_bias=False,
+                    kernel_initializer=filter_initializer)
 
             if batch_norm:
                 output = tf.layers.batch_normalization(
                     output,
-                    training=is_training
-                    # name='bn'
-                )
+                    momentum=_BATCH_NORM_DECAY,
+                    epsilon=_BATCH_NORM_EPSILON,
+                    training=is_training)
 
             # activation
             if activation:
                 output = self._activation(output, activation)
 
-            self.params[name]['output_shape'] = output.shape
-        print_conv_layer_params(
-            filter.shape.as_list(), stride, padding, batch_norm, activation,
-            input.shape.as_list(), output.shape.as_list(), name=name)
+            print(tf.global_variables()[-6:])
 
+            self.params[name]['output_shape'] = output.shape
+        if self.verbose:
+            print_conv_layer_params(
+                self.params[name]['weight_shape'], stride, padding, batch_norm, activation,
+                inputs.shape.as_list(), output.shape.as_list(), name=name)
+
+        print(name, ": ", output)
         return output
     def _create_local_convolution_layer(
         self,
@@ -339,6 +375,8 @@ class DarkNet(object):
                     name='avg_pooling')
             else:
                 raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
+        print("pool input: ", input)
+        print("pool output: ", output)
         print_pooling_layer_params(
             [p_h, p_w], stride, padding, pooling_type,
             input.shape.as_list(), output.shape.as_list(), name=name)
@@ -364,6 +402,9 @@ class DarkNet(object):
             prob, input.shape.as_list(), output.shape.as_list(), name=name)
 
         return output
+    def _create_flatten_layer(self, inputs, transpose=[0, 3, 1, 2]):
+        inputs = tf.transpose(inputs, transpose)
+        return tf.layers.flatten(inputs, name="flatten")
     def _create_fully_connectd_layer(
         self,
         input,
@@ -379,45 +420,61 @@ class DarkNet(object):
 
         with tf.variable_scope(name):
             # Do flatten
-            input = tf.layers.flatten(input, name='flatten')
-            # Get weight
-            n_in = input.shape[-1]
-            W = tf.get_variable(
-                'weight', 
-                [n_in, n_out],
-                initializer=weight_initializer,
-                dtype=tf.float32)
-            self.params[name] = {'weight': W, 'weight_shape': [n_in, n_out]}
-            # Get bias
+            # input = tf.layers.flatten(input, name='flatten')
+            input = self._create_flatten_layer(input)
+            print(input)
+
+            # FC layer
+            n_in = input.shape.as_list()[-1]
             if use_bias:
-                b = tf.get_variable(
-                    'bias',
-                    [n_out],
-                    initializer=bias_initializer,
-                    dtype=tf.float32)
-                self.params[name]['bias'] = b
-                output = tf.nn.bias_add(tf.matmul(input, W), b)
+                output = tf.contrib.layers.fully_connected(
+                    input,
+                    n_out,
+                    activation_fn=None)
             else:
-                output = tf.matmul(input, W)
+                output = tf.contrib.layers.fully_connected(
+                    input,
+                    n_out,
+                    activation_fn=None,
+                    biases_initializer=None)
+
+            print(tf.global_variables()[-10:])
+            self.params[name] = {'weight_shape': [n_out, n_in]}
+            # # Get weight
+            # n_in = input.shape[-1]
+            # W = tf.get_variable(
+            #     'weight', 
+            #     [n_in, n_out],
+            #     initializer=weight_initializer,
+            #     dtype=tf.float32)
+            # self.params[name] = {'weight': W, 'weight_shape': [n_in, n_out]}
+            # # Get bias
+            # if use_bias:
+            #     b = tf.get_variable(
+            #         'bias',
+            #         [n_out],
+            #         initializer=bias_initializer,
+            #         dtype=tf.float32)
+            #     self.params[name]['bias'] = b
+            #     output = tf.nn.bias_add(tf.matmul(input, W), b)
+            # else:
+            #     output = tf.matmul(input, W)
 
             if activation:
                 output = self._activation(output, activation)
 
             self.params[name]['output_shape'] = output.shape
         print_fc_layer_params(
-            W.shape.as_list(), activation,
+            [n_out, n_in], activation,
             input.shape.as_list(), output.shape.as_list(), name=name)
 
         return output
-    def _load_model(self):
-        # Parse model config
-        self._parse_config(self.flags.cfg)
-
-        # Create input placeholder
-        input = tf.placeholder(
-            tf.float32,
-            shape=[None, self.img_height, self.img_width, self.img_channels],
-            name="input")
+    def _load_model(self, input):
+        # # Create input placeholder
+        # input = tf.placeholder(
+        #     tf.float32,
+        #     shape=[None, self.img_height, self.img_width, self.img_channels],
+        #     name="input")
         
         output = input
 
@@ -479,7 +536,7 @@ class DarkNet(object):
                 # print("output shape: {}".format(output.shape))
         self.sess.run(tf.global_variables_initializer())
 
-        return input, output
+        return output
         # print("output:\n",output)
     def _load_conv_weight(self, section, config, ptr, weights):
         # shape of kernel
@@ -507,21 +564,33 @@ class DarkNet(object):
                 assign_ops.append(var.assign(weights[ptr:ptr + filters]))
                 ptr += filters
 
-                kernel = tf.get_variable("kernel")
+                kernel = tf.get_variable("conv2d/kernel")
                 # DaekNet weight shape [f, c, h, w], tensorflow [h, w, c, f]
-                kernel_shape = self.params[section]['kernel'].shape
+                kernel_shape = self.params[section]['weight_shape']
                 kernel_data = weights[ptr:ptr + num].reshape(
                     kernel_shape[3], kernel_shape[2], kernel_shape[0], kernel_shape[1])
                 kernel_data = np.transpose(kernel_data, [2, 3, 1, 0])
                 assign_ops.append(kernel.assign(kernel_data))
+
+                self.sess.run(assign_ops[-5:])
+                print("beta:\n", self.sess.run(beta))
+                print("gamma:\n", self.sess.run(gamma))
+                print("mean:\n", self.sess.run(mean))
+                print("var: \n", self.sess.run(var))
+                print("kernel:\n", self.sess.run(kernel))
+
                 ptr += num
             else:
-                bias = tf.get_variable("bias")
+                bias = tf.get_variable("conv2d/bias")
                 assign_ops.append(bias.assign(weights[ptr:ptr + filters]))
                 ptr += filters
 
-                kernel = tf.get_variable("kernel")
-                assign_ops.append(kernel.assign(weights[ptr:ptr + num]))
+                kernel = tf.get_variable("conv2d/kernel")
+                kernel_shape = self.params[section]['weight_shape']
+                kernel_data = weights[ptr:ptr + num].reshape(
+                    kernel_shape[3], kernel_shape[2], kernel_shape[0], kernel_shape[1])
+                kernel_data = np.transpose(kernel_data, [2, 3, 1, 0])
+                assign_ops.append(kernel.assign(kernel_data))
                 ptr += num
         
         return ptr, assign_ops
@@ -557,24 +626,24 @@ class DarkNet(object):
         self.sess.run(assign_ops)
         return ptr, assign_ops
     def _load_fc_weight(self, section, config, ptr, weights):
-        n_in, n_out = self.params[section]['weight_shape']
+        n_out, n_in = self.params[section]['weight_shape']
 
-        print(n_in, n_out)
         assign_ops = []
         with tf.variable_scope(section, reuse=True):
-            bias = tf.get_variable("bias")
+            bias = tf.get_variable("fully_connected/biases")
             assign_ops.append(bias.assign(weights[ptr:ptr + n_out]))
             ptr += n_out
 
-            weight = tf.get_variable("weight")
-            weight_data = weights[ptr:ptr + n_out*n_in].reshape([n_in, n_out])
-            # print(n_out + n_out*n_in)
-            # print(weight_data.shape)
-            # print(weights.shape[-1])
-            # print(ptr + n_out * n_in)
+            weight = tf.get_variable("fully_connected/weights")
+            weight_data = weights[ptr:ptr + n_out*n_in].reshape([n_out, n_in])
+            weight_data = np.transpose(weight_data, [1, 0])
 
             assign_ops.append(weight.assign(weight_data))
             ptr += n_out * n_in
+
+            # self.sess.run(assign_ops[-2:])
+            # print("bias:\n", self.sess.run(bias))
+            # print("weight:\n", self.sess.run(weight))
 
         self.sess.run(assign_ops)
         return ptr, assign_ops
@@ -599,17 +668,17 @@ class DarkNet(object):
                 prev_ptr = ptr
                 if section.startswith("convolutional"):
                     config = self.configs[section]
-                    ptr, assign_ops = self.load_conv_weight(section, config, ptr, weights)
+                    ptr, assign_ops = self._load_conv_weight(section, config, ptr, weights)
                     assign_op_list.insert(-1, assign_ops)
 
                 if section.startswith("local"):
                     config = self.configs[section]
-                    ptr, assign_ops = self.load_local_conv_weight(section, config, ptr, weights)
+                    ptr, assign_ops = self._load_local_conv_weight(section, config, ptr, weights)
                     assign_op_list.insert(-1, assign_ops)
                     
                 if section.startswith("connected"):
                     config = self.configs[section]
-                    ptr, assign_ops = self.load_fc_weight(section, config, ptr, weights)
+                    ptr, assign_ops = self._load_fc_weight(section, config, ptr, weights)
                     assign_op_list.insert(-1, assign_ops)
 
                 print("{} layer {} load {} float data\n".format(index, section, ptr-prev_ptr))
@@ -626,27 +695,39 @@ class DarkNet(object):
         else:
             raise TypeError("Please provide model weight file.")
     def _inference(self, image):
-        input = self.sess.graph.get_tensor_by_name("input:0")
-        output = self.sess.graph.get_tensor_by_name("connected_1/BiasAdd:0")
-
-        # print(self.sess.run("local_1/pad:0", feed_dict={input: image}))
-        # return None
-
-        res = self.sess.run(output, feed_dict={input: image})
-        return res
+        if not isinstance(image, np.ndarray):
+            raise TypeError("Need np.ndarray, got {} of type {}.".format(image, type(image)))
+        return self.detect_func(image[np.newaxis])
     def _pre_process_input(self, input):
         image = tf.to_float(input) / 255.0
         image = tf.image.resize_images(
             image, tf.constant([self.img_height, self.img_width], dtype=tf.int32))
         return image
+    def _build_network(self):
+        # Input placeholder
+        input = tf.placeholder(
+            tf.float32,
+            shape=[None, None, None, self.img_channels],
+            name="input")
+        
+        # Handler image data
+        processed_input = self._pre_process_input(input)
+
+        # Builde network
+        output = self._load_model(processed_input)
+        self._load_model_weight()
+
+        return input, output, processed_input
     def _build_detector(self, encoding):
         with tf.name_scope("post_process"):
             S, B, C = self.cell_size, self.box_nums, self.classes
+
+            print(encoding)
             
             idx1 = S * S * C
             idx2 = idx1 + S*S*B
-            class_prob = tf.reshape(encoding[:, :idx1], [S, S, 1, C])
-            box_confidences = tf.reshape(encoding[:, idx1:idx2, B, 1])
+            class_probs = tf.reshape(encoding[:, :idx1], [S, S, C])
+            box_confidences = tf.reshape(encoding[:, idx1:idx2], [S, S, B])
             boxes = tf.reshape(encoding[:, idx2:], [S, S, B, 4])
 
             # Restore boxes values
@@ -668,26 +749,94 @@ class DarkNet(object):
                 tf.square(boxes[:, :, :, 3])],
                 axis=3)
 
-            
+            # select those boxes whose class confidence is larger than threshold
+            class_scores, boxes, box_classes = select_boxes_by_classes_prob(
+                box_confidences, class_probs, boxes)
+            # Do nms, get final results
+            scores, boxes, classes = non_max_suppression(
+                class_scores, boxes, box_classes
+            )
 
+            return scores, boxes, classes
+    def show_results(self, image, results, imshow=True, deteted_boxes_file=None,
+                     detected_image_file="detect.jpg"):
+        """Show the detection boxes"""
+        img_cp = image.copy()
+        if deteted_boxes_file:
+            f = open(deteted_boxes_file, "w")
+        #  draw boxes
+        for i in range(len(results)):
+            x = int(results[i][1])
+            y = int(results[i][2])
+            w = int(results[i][3]) // 2
+            h = int(results[i][4]) // 2
+            if self.verbose:
+                print("class: %s, [x, y, w, h]=[%d, %d, %d, %d], confidence=%f"
+                      % (results[i][0],x, y, w, h, results[i][-1]))
 
+                # 中心坐标 + 宽高box(x, y, w, h) -> xmin = x - w / 2 -> 左上 + 右下box(xmin, ymin, xmax, ymax)
+                cv2.rectangle(img_cp, (x - w, y - h), (x + w, y + h), (0, 255, 0), 2)
+
+                # 在边界框上显示类别、分数(类别置信度)
+                cv2.rectangle(img_cp, (x - w, y - h - 20), (x + w, y - h), (125, 125, 125), -1) # puttext函数的背景
+                cv2.putText(img_cp, results[i][0] + ' : %.2f' % results[i][5], (x - w + 5, y - h - 7),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
+            if deteted_boxes_file:
+                # 保存obj检测结果为txt文件
+                f.write(results[i][0] + ',' + str(x) + ',' + str(y) + ',' +
+                        str(w) + ',' + str(h) + ',' + str(results[i][5]) + '\n')
+        if imshow:
+            cv2.imwrite(detected_image_file, img_cp)
+            # cv2.imshow('YOLO_v1_tiny detection', img_cp)
+            # cv2.waitKey(0)
+        if detected_image_file:
+            cv2.imwrite(detected_image_file, img_cp)
+        if deteted_boxes_file:
+            f.close()
     def detect_from_image_file(self, image_file):
         image = cv2.imread(image_file)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        res = self.inference(image)
+        image_RGB = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # print("input imageRGB:", image_RGB)
+
+        # print("input processed image:\n", self.sess.run(self.processed_image, feed_dict={self.input: image_RGB[np.newaxis]}))
+        # print("encoding:\n", self.sess.run(self.encoding, feed_dict={self.input: image_RGB[np.newaxis]}))
+        # print("conv1 input:\n", self.sess.run("resize_images/ResizeBilinear:0", feed_dict={self.input: image_RGB[np.newaxis]}))
+        # print("conv1 output:\n", self.sess.run("convolutional_1/leaky:0", feed_dict={self.input: image_RGB[np.newaxis]}))
+        # print("pool1 output:\n", self.sess.run("maxpool_1/avg_pooling:0", feed_dict={self.input: image_RGB[np.newaxis]}))
+        # print("conv8 output:\n", self.sess.run("convolutional_8/leaky:0", feed_dict={self.input: image_RGB[np.newaxis]}))
+        # print("flatten output:\n", self.sess.run("connected_1/flatten/Reshape:0", feed_dict={self.input: image_RGB[np.newaxis]}))
         
-        # for i in range(res.shape[-1]):
-        #     print(res[0, i], " ", end="")
-        #     if 19 == i % 20:
-        #         print("\n")
-        S, B, C = self.cell_size, self.box_nums, self.classes
-        class_probs = res[:, :S*S*C].reshape(S,S,1,C)
-        box_confidences = res[:, S*S*C:S*S*C+S*S*B].reshape(S,S,B,1)
-        boxes = res[:, -S*S*4:].reshape(S,S,4)
-        print(class_probs.shape)
-        print(box_confidences.shape)
-        print(boxes.shape)
-        scores = select_boxes_by_classes_prob(box_confidences, class_probs)
-        print(scores)
-        print(np.max(scores))
+# "convolutional_1/leaky:0"
+# "convolutional_2/leaky:0"
+# "convolutional_3/leaky:0"
+# "convolutional_4/leaky:0"
+# "convolutional_5/leaky:0"
+# "convolutional_6/leaky:0"
+# "convolutional_7/leaky:0"
+# "convolutional_8/leaky:0"
+# "maxpool_1/avg_pooling:0"
+# "maxpool_2/avg_pooling:0"
+# "maxpool_3/avg_pooling:0"
+# "maxpool_4/avg_pooling:0"
+# "maxpool_5/avg_pooling:0"
+# "maxpool_6/avg_pooling:0"
+# "connected_1/flatten/Reshape:0"
+
+        scores, boxes, classes = self._inference(image_RGB)
+
+        img_h, img_w, _ = image.shape
+        for i in range(len(scores)):#ratio convert  
+            boxes[i][0] *= (1.0 * img_w)
+            boxes[i][1] *= (1.0 * img_h)
+            boxes[i][2] *= (1.0 * img_w)
+            boxes[i][3] *= (1.0 * img_h)
+
+        predict_boxes = []
+        for i in range(len(scores)):
+            # 预测框数据为：[概率,x,y,w,h,类别置信度]
+            predict_boxes.append((self.classes_names[classes[i]], boxes[i, 0],
+                                  boxes[i, 1], boxes[i, 2], boxes[i, 3], scores[i]))
+        self.show_results(image, predict_boxes, True, None)
+        print(scores, boxes, classes)
 

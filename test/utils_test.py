@@ -20,6 +20,7 @@ from utils.utils import make_unique_section_file
 from utils.utils import get_padding_num
 from yolo.yolo_utils import select_boxes_by_classes_prob
 from yolo.yolo_utils import non_max_suppression
+from yolo.yolo_utils import read_classes_names
 
 # class TestUtils(unittest.TestCase):
 #     def test_get_padding_num_one_dim(self):
@@ -45,6 +46,11 @@ class TestYOLOUtils(unittest.TestCase):
 
         class_scores,boxes,classes = select_boxes_by_classes_prob(box_confidences, class_probs, boxes)
         print(non_max_suppression(class_scores, boxes, classes))
+
+    def test_read_classes_names(self):
+        file_path = '../data/voc.names'
+
+        read_classes_names(file_path)
 
 if "__main__" == __name__:
     unittest.main()

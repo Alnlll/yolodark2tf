@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding=utf-8 -*-
+import os
 
 import numpy as np
 import tensorflow as tf
@@ -20,6 +21,7 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
     # Calculate p(classes)
     class_scores = tf.expand_dims(box_confidences, -1) * tf.expand_dims(class_probs, 2)
     print(class_scores)
+    print(boxes)
     class_scores = tf.reshape(class_scores, [-1, C])
     boxes = tf.reshape(boxes, [-1, 4])
 
@@ -30,13 +32,12 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
     box_class_scores = tf.reduce_max(class_scores, axis=1)
 
     # Select classes' scores by threshold
-    mask = box_class_scores > threshold
+    mask = box_class_scores >= threshold
     class_scores = tf.boolean_mask(box_class_scores, mask)
     boxes = tf.boolean_mask(boxes, mask)
     box_classes = tf.boolean_mask(box_classes, mask)
 
     return class_scores, boxes, box_classes
-
 def non_max_suppression(class_scores, boxes, box_classes, max_detect_count=10, iou_threshold=.6):
 
     # tf nms need coordinates of any diagonal pair of box corner
@@ -57,7 +58,15 @@ def non_max_suppression(class_scores, boxes, box_classes, max_detect_count=10, i
     classes = tf.identity(tf.gather(box_classes, indices))
 
     return scores, boxes, classes
-
+def read_classes_names(file_path):
+    if 'names' != file_path.split(".")[-1]:
+        raise TypeError("Need name file end with .names, got {}".format(file_path))
+    if not os.path.exists(file_path):
+        raise IOError("{} doesn't exist.")
+    
+    with open(file_path, 'r') as f:
+        names = f.read()
+        print(names)
 # def IOU(box0, box1):
 #     b1_x0, b1_y0, b1_x1, b1_y1 = box0
 #     b2_x0, b2_y0, b2_x1, b2_y1 = box1
