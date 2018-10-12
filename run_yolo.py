@@ -31,13 +31,16 @@ def define_args():
         help="Path to image to be detected.")
     parser.add_argument(
         "--video", '-v', type=str, default="data/video.avi",
-        help="Path to vedio to be detected.")
+        help="Path to video to be detected.")
+    parser.add_argument(
+        "--output_dir", '-o', type=str, default="output",
+        help="Path to store output.")
     parser.add_argument(
         "--summary", '-s', type=str, default="",
         help="Path of summary logs."
     )
     parser.add_argument(
-        "--names", '-s', type=str, default="",
+        "--names", '-n', type=str, default="",
         help="Path of class names file."
     )
     
@@ -47,45 +50,7 @@ def define_args():
         print("train and test flag cannot be set simultaneously.")
         sys.exit()
 
-    print(args)
     return args
-
-def select_classes(box_confidences, class_probs, boxes, threshold=.2):
-    '''
-    Select those 
-    Arguments:
-        box_confidences - tensor of shape [S, S, B]
-        class_probs - tensor of shape [S, S, C]
-        boxes - tensor of shape [S, S, B, 4]
-    Returns:
-        class_scores - tensor of shape [S, S, B, C]
-    '''
-    _, _, B = box_confidences.shape
-
-
-    class_scores = np.zeros([S, S, B, Classes])
-    for i in range(B):
-        class_scores[:, :, i, :] = confidences[:, :, i][:,:,np.newaxis] * classes_probs
-        print(class_scores[:, :, i, :].shape)
-    
-    print(np.max(class_scores))
-    print(tf.keras.backend.max(class_scores, axis=-1))
-
-    return class_scores
-
-def encode_image(sess, image_path):
-    
-    input = sess.graph.get_tensor_by_name("input:0")
-    output = sess.graph.get_tensor_by_name("output:0")
-
-    img = cv2.imread(sys.argv[2])
-    img = cv2.resize(img, (448, 448))
-    img = img[np.newaxis,:, :, :]
-
-    encode = sess.run(output, feed_dict={input:img})
-    print(encode.shape)
-
-    return encode
 
 if "__main__" == __name__:
 

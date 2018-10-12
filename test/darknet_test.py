@@ -216,6 +216,7 @@ class TestDarkNet(unittest.TestCase):
         flags.weight = "../weights/tiny-yolov1.weights"
         flags.train = False
         flags.summary = "summary"
+        flags.names = '../data/voc.names'
 
         # image = cv2.imread("../data/dog.jpg")
         # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

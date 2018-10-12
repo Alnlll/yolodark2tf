@@ -23,6 +23,7 @@ from utils.utils import print_dropout_layer_params
 from utils.utils import print_fc_layer_params
 from yolo_utils import select_boxes_by_classes_prob
 from yolo_utils import non_max_suppression
+from yolo_utils import read_classes_names
 
 _LEAK_RATIO = .1
 _BATCH_NORM_DECAY = .9
@@ -37,10 +38,7 @@ class DarkNet(object):
         self.verbose = True
         self.flags = flags
 
-        self.classes_names = ["aeroplane", "bicycle", "bird", "boat", "bottle",
-                            "bus", "car", "cat", "chair", "cow", "diningtable",
-                            "dog", "horse", " ", "person", "pottedplant",
-                            "sheep", "sofa", "train","tvmonitor"]
+        self.classes_names = read_classes_names(self.flags.names)
 
         gpu_options = tf.GPUOptions(allow_growth=True)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
@@ -760,11 +758,13 @@ class DarkNet(object):
             return scores, boxes, classes
     def show_results(self, image, results, imshow=True, deteted_boxes_file=None,
                      detected_image_file="detect.jpg"):
-        """Show the detection boxes"""
+        """Show the detection boxes
+
+        """
         img_cp = image.copy()
         if deteted_boxes_file:
             f = open(deteted_boxes_file, "w")
-        #  draw boxes
+
         for i in range(len(results)):
             x = int(results[i][1])
             y = int(results[i][2])
@@ -825,16 +825,17 @@ class DarkNet(object):
 
         scores, boxes, classes = self._inference(image_RGB)
 
+        print(type(scores))
+        print(boxes.shape)
+
         img_h, img_w, _ = image.shape
-        for i in range(len(scores)):#ratio convert  
-            boxes[i][0] *= (1.0 * img_w)
-            boxes[i][1] *= (1.0 * img_h)
-            boxes[i][2] *= (1.0 * img_w)
-            boxes[i][3] *= (1.0 * img_h)
+        boxes[:,0] *= (1.0 * img_w)
+        boxes[:,1] *= (1.0 * img_h)
+        boxes[:,2] *= (1.0 * img_w)
+        boxes[:,3] *= (1.0 * img_h)
 
         predict_boxes = []
         for i in range(len(scores)):
-            # 预测框数据为：[概率,x,y,w,h,类别置信度]
             predict_boxes.append((self.classes_names[classes[i]], boxes[i, 0],
                                   boxes[i, 1], boxes[i, 2], boxes[i, 3], scores[i]))
         self.show_results(image, predict_boxes, True, None)
