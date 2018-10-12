@@ -139,9 +139,6 @@ class DarkNet(object):
 
                 self.configs[section] = {
                     'out': n_out, 'activation': activation}
-
-        # for section in self.sections[1:-1]:
-        #     print(section, ":\n", self.configs[section])
     def _activation(self, input, activation):
         if 'relu' == activation:
             output = tf.nn.relu(input, name = 'relu')
@@ -170,41 +167,6 @@ class DarkNet(object):
             # name='bn'
         )
 
-        # gamma, beta, mean, var = 
-        # gamma = self.sess.get_tensor_by_name("{}/batch_normalization/gamma:0".format())
-        
-        # return output
-            # # Data variance to learn
-            # gamma = tf.get_variable(
-            #     "gamma", input.shape[-1],
-            #     initializer=tf.constant_initializer(1.0), trainable=True)
-            # # Data mean to learn
-            # beta = tf.get_variable(
-            #     "beta", input.shape[-1],
-            #     initializer=tf.constant_initializer(0.0), trainable=True)
-
-            # # Calculate batch mean and variance
-            # axises = list(range((len(input.shape) - 1)))
-            # batch_mean, batch_var = tf.nn.moments(input, axises, name='moments')
-
-            # # Moving avergae for mean and variance
-            # ema = tf.train.ExponentialMovingAverage(decay=moving_decay)
-            # def mean_var_with_update():
-            #     ema_apply_op = ema.apply([batch_mean, batch_var])
-            #     with tf.control_dependencies([ema_apply_op]):
-            #          return tf.identity(batch_mean), tf.identity(batch_var)
-            
-            # # Update mean and var
-            # mean, var = tf.cond(
-            #     tf.equal(is_training, True),
-            #     mean_var_with_update,
-            #     lambda: (ema.average(batch_mean), ema.average(batch_var))
-            # )
-            # print(mean, var)
-            # output = tf.nn.batch_normalization(
-            #     input, mean, var, beta, gamma, eps, name=name
-            # )
-
         return output
     def _create_convolution_layer(
         self,
@@ -225,7 +187,7 @@ class DarkNet(object):
         Returns:
         '''
 
-        in_channels = inputs.shape[-1]
+        in_channels = inputs.shape.as_list()[-1]
         # padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
         padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
 
@@ -270,7 +232,7 @@ class DarkNet(object):
             if activation:
                 output = self._activation(output, activation)
 
-            print(tf.global_variables()[-6:])
+            # print(tf.global_variables()[-6:])
 
             self.params[name]['output_shape'] = output.shape
         if self.verbose:
@@ -278,7 +240,7 @@ class DarkNet(object):
                 self.params[name]['weight_shape'], stride, padding, batch_norm, activation,
                 inputs.shape.as_list(), output.shape.as_list(), name=name)
 
-        print(name, ": ", output)
+        # print(name, ": ", output)
         return output
     def _create_local_convolution_layer(
         self,
@@ -373,11 +335,12 @@ class DarkNet(object):
                     name='avg_pooling')
             else:
                 raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
-        print("pool input: ", input)
-        print("pool output: ", output)
-        print_pooling_layer_params(
-            [p_h, p_w], stride, padding, pooling_type,
-            input.shape.as_list(), output.shape.as_list(), name=name)
+        # print("pool input: ", input)
+        # print("pool output: ", output)
+        if self.verbose:
+            print_pooling_layer_params(
+                [p_h, p_w], stride, padding, pooling_type,
+                input.shape.as_list(), output.shape.as_list(), name=name)
         return output
     def _create_dropout_layer(
         self,
@@ -396,8 +359,9 @@ class DarkNet(object):
                 output = tf.nn.dropout(input, prob, seed=seed, name='dropout')
             else:
                 output = input
-        print_dropout_layer_params(
-            prob, input.shape.as_list(), output.shape.as_list(), name=name)
+        if self.verbose:
+            print_dropout_layer_params(
+                prob, input.shape.as_list(), output.shape.as_list(), name=name)
 
         return output
     def _create_flatten_layer(self, inputs, transpose=[0, 3, 1, 2]):
@@ -420,7 +384,6 @@ class DarkNet(object):
             # Do flatten
             # input = tf.layers.flatten(input, name='flatten')
             input = self._create_flatten_layer(input)
-            print(input)
 
             # FC layer
             n_in = input.shape.as_list()[-1]
@@ -436,27 +399,7 @@ class DarkNet(object):
                     activation_fn=None,
                     biases_initializer=None)
 
-            print(tf.global_variables()[-10:])
             self.params[name] = {'weight_shape': [n_out, n_in]}
-            # # Get weight
-            # n_in = input.shape[-1]
-            # W = tf.get_variable(
-            #     'weight', 
-            #     [n_in, n_out],
-            #     initializer=weight_initializer,
-            #     dtype=tf.float32)
-            # self.params[name] = {'weight': W, 'weight_shape': [n_in, n_out]}
-            # # Get bias
-            # if use_bias:
-            #     b = tf.get_variable(
-            #         'bias',
-            #         [n_out],
-            #         initializer=bias_initializer,
-            #         dtype=tf.float32)
-            #     self.params[name]['bias'] = b
-            #     output = tf.nn.bias_add(tf.matmul(input, W), b)
-            # else:
-            #     output = tf.matmul(input, W)
 
             if activation:
                 output = self._activation(output, activation)
@@ -473,6 +416,9 @@ class DarkNet(object):
         #     tf.float32,
         #     shape=[None, self.img_height, self.img_width, self.img_channels],
         #     name="input")
+
+        if self.verbose:
+            print("\nConstructing network...\n-----------------------------------------")
         
         output = input
 
@@ -570,12 +516,12 @@ class DarkNet(object):
                 kernel_data = np.transpose(kernel_data, [2, 3, 1, 0])
                 assign_ops.append(kernel.assign(kernel_data))
 
-                self.sess.run(assign_ops[-5:])
-                print("beta:\n", self.sess.run(beta))
-                print("gamma:\n", self.sess.run(gamma))
-                print("mean:\n", self.sess.run(mean))
-                print("var: \n", self.sess.run(var))
-                print("kernel:\n", self.sess.run(kernel))
+                # self.sess.run(assign_ops[-5:])
+                # print("beta:\n", self.sess.run(beta))
+                # print("gamma:\n", self.sess.run(gamma))
+                # print("mean:\n", self.sess.run(mean))
+                # print("var: \n", self.sess.run(var))
+                # print("kernel:\n", self.sess.run(kernel))
 
                 ptr += num
             else:
@@ -652,6 +598,9 @@ class DarkNet(object):
     def _load_weight(self):
         if not os.path.exists(self.flags.weight):
             raise IOError("{} doesn't exist.".format(self.flags.weight))
+
+        if self.verbose:
+            print("\nLoading weights...\n-----------------------------------------")
         
         with open(self.flags.weight, 'rb') as f:
             self.header = np.fromfile(f, dtype=np.int32, count=4)
@@ -662,7 +611,7 @@ class DarkNet(object):
             assign_op_list = []
 
             # load weight doesn't run out of weight file, have no idea about remaining data.
-            for index,section in enumerate(self.sections):
+            for section in self.sections:
                 prev_ptr = ptr
                 if section.startswith("convolutional"):
                     config = self.configs[section]
@@ -679,10 +628,15 @@ class DarkNet(object):
                     ptr, assign_ops = self._load_fc_weight(section, config, ptr, weights)
                     assign_op_list.insert(-1, assign_ops)
 
-                print("{} layer {} load {} float data\n".format(index, section, ptr-prev_ptr))
-                print("{}/{} {}".format(ptr+4, weights.shape[-1]+4, weights.shape[-1]-ptr))
+                if self.verbose:
+                    # weights.shape[-1]-ptr
+                    print("layer:{} load {} float data  total:{}/{}".format(
+                        format(section, '<20s'),
+                        format(ptr-prev_ptr, '<10d'),
+                        # ptr-prev_ptr,
+                        ptr+4,
+                        weights.shape[-1]+4))
             self.sess.run(assign_op_list)
-            print("load {} float data\n".format(ptr))
     def _load_model_weight(self):
         if self.flags.weight:
             self._load_weight()
@@ -720,7 +674,7 @@ class DarkNet(object):
         with tf.name_scope("post_process"):
             S, B, C = self.cell_size, self.box_nums, self.classes
 
-            print(encoding)
+            # print(encoding)
             
             idx1 = S * S * C
             idx2 = idx1 + S*S*B
@@ -756,43 +710,53 @@ class DarkNet(object):
             )
 
             return scores, boxes, classes
-    def show_results(self, image, results, imshow=True, deteted_boxes_file=None,
-                     detected_image_file="detect.jpg"):
+    def show_results(
+            self,
+            image,
+            scores, boxes, classes,
+            show=True,
+            text_record=None,
+            output_file="detected.jpg"):
         """Show the detection boxes
 
         """
         img_cp = image.copy()
-        if deteted_boxes_file:
-            f = open(deteted_boxes_file, "w")
+        if text_record:
+            f = open(text_record, "w")
 
-        for i in range(len(results)):
-            x = int(results[i][1])
-            y = int(results[i][2])
-            w = int(results[i][3]) // 2
-            h = int(results[i][4]) // 2
+        detect_count = scores.shape[0]
+        for i in range(detect_count):
+            box = boxes[i]
+            class_name = self.classes_names[classes[i]]
+            score = scores[i]
+
+            x, y, w, h = box.astype(np.int32)
+
+            result_string = "Class name: {} [x, y, w, h]=[{}, {}, {}, {}], score={}".format(
+                format(class_name, '<10s'),
+                format(x, '<3d'),
+                format(y, '<3d'),
+                format(w, '<3d'),
+                format(h, '<3d'),
+                format(score, '<5.4f'))
+
             if self.verbose:
-                print("class: %s, [x, y, w, h]=[%d, %d, %d, %d], confidence=%f"
-                      % (results[i][0],x, y, w, h, results[i][-1]))
+                print(result_string)
+            if text_record:
+                f.write("{}\n".format(result_string))
+            if show or output_file:
+                cv2.rectangle(img_cp, (x - w//2, y - h//2), (x + w//2, y + h//2), (0, 255, 0), 2)
 
-                # 中心坐标 + 宽高box(x, y, w, h) -> xmin = x - w / 2 -> 左上 + 右下box(xmin, ymin, xmax, ymax)
-                cv2.rectangle(img_cp, (x - w, y - h), (x + w, y + h), (0, 255, 0), 2)
-
-                # 在边界框上显示类别、分数(类别置信度)
-                cv2.rectangle(img_cp, (x - w, y - h - 20), (x + w, y - h), (125, 125, 125), -1) # puttext函数的背景
-                cv2.putText(img_cp, results[i][0] + ' : %.2f' % results[i][5], (x - w + 5, y - h - 7),
+                cv2.rectangle(img_cp, (x - w//2, y - h//2 + 20), (x + w//2, y - h//2), (125, 125, 125), -1)
+                cv2.putText(img_cp, 
+                            "{}:{}".format(class_name, format(score, '.4f')), 
+                            (x - w//2 + 5, y - h//2 + 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-
-            if deteted_boxes_file:
-                # 保存obj检测结果为txt文件
-                f.write(results[i][0] + ',' + str(x) + ',' + str(y) + ',' +
-                        str(w) + ',' + str(h) + ',' + str(results[i][5]) + '\n')
-        if imshow:
-            cv2.imwrite(detected_image_file, img_cp)
-            # cv2.imshow('YOLO_v1_tiny detection', img_cp)
-            # cv2.waitKey(0)
-        if detected_image_file:
-            cv2.imwrite(detected_image_file, img_cp)
-        if deteted_boxes_file:
+                if show:
+                    cv2.imwrite(output_file, img_cp)
+                if output_file:
+                    cv2.imwrite(output_file, img_cp)
+        if text_record:
             f.close()
     def detect_from_image_file(self, image_file):
         image = cv2.imread(image_file)
@@ -807,26 +771,26 @@ class DarkNet(object):
         # print("conv8 output:\n", self.sess.run("convolutional_8/leaky:0", feed_dict={self.input: image_RGB[np.newaxis]}))
         # print("flatten output:\n", self.sess.run("connected_1/flatten/Reshape:0", feed_dict={self.input: image_RGB[np.newaxis]}))
         
-# "convolutional_1/leaky:0"
-# "convolutional_2/leaky:0"
-# "convolutional_3/leaky:0"
-# "convolutional_4/leaky:0"
-# "convolutional_5/leaky:0"
-# "convolutional_6/leaky:0"
-# "convolutional_7/leaky:0"
-# "convolutional_8/leaky:0"
-# "maxpool_1/avg_pooling:0"
-# "maxpool_2/avg_pooling:0"
-# "maxpool_3/avg_pooling:0"
-# "maxpool_4/avg_pooling:0"
-# "maxpool_5/avg_pooling:0"
-# "maxpool_6/avg_pooling:0"
-# "connected_1/flatten/Reshape:0"
+        # "convolutional_1/leaky:0"
+        # "convolutional_2/leaky:0"
+        # "convolutional_3/leaky:0"
+        # "convolutional_4/leaky:0"
+        # "convolutional_5/leaky:0"
+        # "convolutional_6/leaky:0"
+        # "convolutional_7/leaky:0"
+        # "convolutional_8/leaky:0"
+        # "maxpool_1/avg_pooling:0"
+        # "maxpool_2/avg_pooling:0"
+        # "maxpool_3/avg_pooling:0"
+        # "maxpool_4/avg_pooling:0"
+        # "maxpool_5/avg_pooling:0"
+        # "maxpool_6/avg_pooling:0"
+        # "connected_1/flatten/Reshape:0"
 
+        if self.verbose:
+            print("\nDetecting {}...\n-----------------------------------------".format(image_file))
+            print("Detected result:")
         scores, boxes, classes = self._inference(image_RGB)
-
-        print(type(scores))
-        print(boxes.shape)
 
         img_h, img_w, _ = image.shape
         boxes[:,0] *= (1.0 * img_w)
@@ -834,10 +798,10 @@ class DarkNet(object):
         boxes[:,2] *= (1.0 * img_w)
         boxes[:,3] *= (1.0 * img_h)
 
-        predict_boxes = []
-        for i in range(len(scores)):
-            predict_boxes.append((self.classes_names[classes[i]], boxes[i, 0],
-                                  boxes[i, 1], boxes[i, 2], boxes[i, 3], scores[i]))
-        self.show_results(image, predict_boxes, True, None)
-        print(scores, boxes, classes)
+        self.show_results(
+            image,
+            scores, boxes, classes,
+            show=True,
+            text_record=None,
+            output_file="detected.jpg")
 

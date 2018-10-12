@@ -20,12 +20,8 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
 
     # Calculate p(classes)
     class_scores = tf.expand_dims(box_confidences, -1) * tf.expand_dims(class_probs, 2)
-    print(class_scores)
-    print(boxes)
     class_scores = tf.reshape(class_scores, [-1, C])
     boxes = tf.reshape(boxes, [-1, 4])
-
-    print(class_scores, boxes)
     
     # Select max p(classes) box btween B boxes for one cell
     box_classes = tf.argmax(class_scores, axis=1)

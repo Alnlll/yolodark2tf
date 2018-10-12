@@ -230,7 +230,7 @@ class TestDarkNet(unittest.TestCase):
         model = DarkNet(flags)
         # model._load_model()
         # model._load_weight()
-        model.detect_from_image_file("../eagle.jpg")
+        model.detect_from_image_file("../person.jpg")
 
 if "__main__" == __name__:
     unittest.main()
