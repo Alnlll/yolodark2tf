@@ -215,19 +215,21 @@ class TestDarkNet(unittest.TestCase):
         flags.cfg = "../cfg/yolov1-tiny.cfg"
         flags.weight = "../weights/tiny-yolov1.weights"
         flags.train = False
-        image = cv2.imread("../data/dog.jpg")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (448, 448))
-        image = image.astype(np.float32)
-        image = image.reshape([1,448,448,3])
+        flags.summary = "summary"
+
+        # image = cv2.imread("../data/dog.jpg")
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # image = cv2.resize(image, (448, 448))
+        # image = image.astype(np.float32)
+        # image = image.reshape([1,448,448,3])
 
         # print(image.shape, image.dtype)
         # return
 
         model = DarkNet(flags)
-        model.load_model()
-        model.load_weight()
-        print(model.detect(image))
+        # model._load_model()
+        # model._load_weight()
+        model.detect_from_image_file("../data/dog.jpg")
 
 if "__main__" == __name__:
     unittest.main()
