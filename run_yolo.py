@@ -36,6 +36,10 @@ def define_args():
         "--summary", '-s', type=str, default="",
         help="Path of summary logs."
     )
+    parser.add_argument(
+        "--names", '-s', type=str, default="",
+        help="Path of class names file."
+    )
     
     args = parser.parse_args()
 

@@ -32,25 +32,29 @@ from yolo.yolo_utils import read_classes_names
 #             (get_padding_num(input_shape, kernel_size, stride) == \
 #             np.array([[1., 2.], [1., 2.]])).all())
 class TestYOLOUtils(unittest.TestCase):
-    def test_select_boxes_by_classes_prob(self):
-        box_confidences = tf.random_normal([3,3,2])
-        class_probs = tf.random_normal([3,3,5])
-        boxes = tf.random_normal([3,3,2,4])
+    # def test_select_boxes_by_classes_prob(self):
+    #     box_confidences = tf.random_normal([3,3,2])
+    #     class_probs = tf.random_normal([3,3,5])
+    #     boxes = tf.random_normal([3,3,2,4])
 
-        print(select_boxes_by_classes_prob(box_confidences, class_probs, boxes))
+    #     print(select_boxes_by_classes_prob(box_confidences, class_probs, boxes))
 
-    def test_non_max_suppression(self):
-        box_confidences = tf.random_normal([3,3,2])
-        class_probs = tf.random_normal([3,3,5])
-        boxes = tf.random_normal([3,3,2,4])
+    # def test_non_max_suppression(self):
+    #     box_confidences = tf.random_normal([3,3,2])
+    #     class_probs = tf.random_normal([3,3,5])
+    #     boxes = tf.random_normal([3,3,2,4])
 
-        class_scores,boxes,classes = select_boxes_by_classes_prob(box_confidences, class_probs, boxes)
-        print(non_max_suppression(class_scores, boxes, classes))
+    #     class_scores,boxes,classes = select_boxes_by_classes_prob(box_confidences, class_probs, boxes)
+    #     print(non_max_suppression(class_scores, boxes, classes))
 
-    def test_read_classes_names(self):
+    def test_read_classes_names_voc(self):
         file_path = '../data/voc.names'
+        names = read_classes_names(file_path)
 
-        read_classes_names(file_path)
+        self.assertEqual(
+            ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'],
+            names)
+
 
 if "__main__" == __name__:
     unittest.main()

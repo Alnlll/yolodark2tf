@@ -58,7 +58,7 @@ def non_max_suppression(class_scores, boxes, box_classes, max_detect_count=10, i
     classes = tf.identity(tf.gather(box_classes, indices))
 
     return scores, boxes, classes
-def read_classes_names(file_path):
+def read_classes_names(file_path, sep='\n'):
     if 'names' != file_path.split(".")[-1]:
         raise TypeError("Need name file end with .names, got {}".format(file_path))
     if not os.path.exists(file_path):
@@ -66,7 +66,9 @@ def read_classes_names(file_path):
     
     with open(file_path, 'r') as f:
         names = f.read()
-        print(names)
+        names = names.strip().split(sep)
+
+    return names
 # def IOU(box0, box1):
 #     b1_x0, b1_y0, b1_x1, b1_y1 = box0
 #     b2_x0, b2_y0, b2_x1, b2_y1 = box1
