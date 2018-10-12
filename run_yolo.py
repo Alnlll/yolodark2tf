@@ -16,10 +16,10 @@ def define_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train", action="store_true", default=False,
-        help="Run as train mode.",)
-    parser.add_argument(
-        "--test", action="store_true", default=True,
-        help="Run as test mode.")
+        help="Run as train mode(test mode if not set).",)
+    # parser.add_argument(
+    #     "--test", action="store_true", default=True,
+    #     help="Run as test mode.")
     parser.add_argument(
         "--cfg", '-c', type=str, default="cfg/yolo.cfg",
         help="Path to config file for network in darknet type.")
@@ -35,6 +35,9 @@ def define_args():
     parser.add_argument(
         "--output_dir", '-o', type=str, default="output",
         help="Path to store output.")
+    parser.add_argument(
+        "--text_record", '-t', type=str, default="",
+        help="Text file to restore detect results.")
     parser.add_argument(
         "--summary", '-s', type=str, default="",
         help="Path of summary logs."
@@ -56,7 +59,7 @@ if "__main__" == __name__:
 
     args = define_args()
     model = DarkNet(args)
-    model.create_model()
+    model.detect_from_image_file(args.image)
 
     # with tf.Session() as sess:
     #     load_pb(sys.argv[1])

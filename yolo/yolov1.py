@@ -722,6 +722,8 @@ class DarkNet(object):
         """
         img_cp = image.copy()
         if text_record:
+            if not os.path.exists(os.path.split(text_record)[0]):
+                os.makedirs(os.path.split(text_record)[0])
             f = open(text_record, "w")
 
         detect_count = scores.shape[0]
@@ -798,10 +800,17 @@ class DarkNet(object):
         boxes[:,2] *= (1.0 * img_w)
         boxes[:,3] *= (1.0 * img_h)
 
+        if self.flags.text_record:
+            if self.flags.output_dir:
+                text_record = os.path.join(self.flags.output_dir, self.flags.text_record)
+            else:
+                text_record = self.flags.text_record
+        if self.flags.output_dir:
+            output_file = os.path.join(self.flags.output_dir, "detected.jpg")
         self.show_results(
             image,
             scores, boxes, classes,
             show=True,
-            text_record=None,
-            output_file="detected.jpg")
+            text_record=text_record,
+            output_file=output_file)
 
