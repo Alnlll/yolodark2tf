@@ -21,9 +21,11 @@ from utils.utils import print_conv_layer_params
 from utils.utils import print_pooling_layer_params
 from utils.utils import print_dropout_layer_params
 from utils.utils import print_fc_layer_params
-from yolo_utils import select_boxes_by_classes_prob
-from yolo_utils import non_max_suppression
-from yolo_utils import read_classes_names
+from utils.utils import timer_wrapper
+from yolo_utils import *
+# from yolo_utils import select_boxes_by_classes_prob
+# from yolo_utils import non_max_suppression
+# from yolo_utils import read_classes_names
 
 _LEAK_RATIO = .1
 _BATCH_NORM_DECAY = .9
@@ -40,8 +42,9 @@ class DarkNet(object):
 
         self.classes_names = read_classes_names(self.flags.names)
 
-        gpu_options = tf.GPUOptions(allow_growth=True)
-        self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        # gpu_options = tf.GPUOptions(allow_growth=True)
+        # self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        self.sess = tf.Session()
 
         # Parse cfg file
         self._parse_config(self.flags.cfg)
@@ -139,35 +142,24 @@ class DarkNet(object):
 
                 self.configs[section] = {
                     'out': n_out, 'activation': activation}
-    def _activation(self, input, activation):
-        if 'relu' == activation:
-            output = tf.nn.relu(input, name = 'relu')
-        elif 'leaky' == activation:
-            output = tf.nn.leaky_relu(input, alpha=_LEAK_RATIO, name = 'leaky')
-        elif 'linear' == activation:
-            output = input
-        else:
-            raise TypeError("Unknown activation type {}.".format(activation))
-
-        return output
+    def _activation(self, inputs, activation):
+        return activation_func(inputs, activation, leaky_ratio=_LEAK_RATIO)
     def _create_bn_layer(
         self,
-        input,
-        # moving_decay=0.9,
-        # eps=1e-5,
+        inputs,
+        momentum=0.9,
+        eps=1e-5,
         is_training=False,
-        name='bn'):
+        name=None):
         '''
         Create batch normalization layer
         '''
-        # with tf.variable_scope(name):
-        output = tf.layers.batch_normalization(
-            input,
-            training=is_training
-            # name='bn'
-        )
-
-        return output
+        return create_bn_layer(
+            inputs,
+            momentum=momentum,
+            eps=eps,
+            is_training=is_training,
+            name=name)
     def _create_convolution_layer(
         self,
         inputs,
@@ -187,60 +179,28 @@ class DarkNet(object):
         Returns:
         '''
 
-        in_channels = inputs.shape.as_list()[-1]
-        # padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
-        padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+        output, param = create_convolution_layer(
+            inputs,
+            filters, f_h, f_w,
+            stride,
+            padding=padding,
+            batch_norm=batch_norm,
+            momentum=_BATCH_NORM_DECAY,
+            eps=_BATCH_NORM_EPSILON,
+            activation=activation,
+            is_training=is_training,
+            filter_initializer=filter_initializer,
+            use_bias=use_bias,
+            bias_initializer=bias_initializer,
+            name=name
+        )
+        self.params[name] = param
 
-        # print(inputs)
-        # print(filters)
-        # print(stride)
-        # print(padding)
-        # print(batch_norm)
-        # print(is_training)
-        # print(use_bias)
-
-        with tf.variable_scope(name):
-            self.params[name] = {'weight_shape': [f_h, f_w, in_channels, filters]}
-            if use_bias:
-                output = tf.layers.conv2d(
-                    inputs,
-                    filters,
-                    (f_h, f_w),
-                    strides=(stride, stride),
-                    padding=padding,
-                    use_bias=True,
-                    kernel_initializer=filter_initializer,
-                    bias_initializer=bias_initializer)
-            else:
-                output = tf.layers.conv2d(
-                    inputs,
-                    filters,
-                    (f_h, f_w),
-                    strides=(stride, stride),
-                    padding=padding,
-                    use_bias=False,
-                    kernel_initializer=filter_initializer)
-
-            if batch_norm:
-                output = tf.layers.batch_normalization(
-                    output,
-                    momentum=_BATCH_NORM_DECAY,
-                    epsilon=_BATCH_NORM_EPSILON,
-                    training=is_training)
-
-            # activation
-            if activation:
-                output = self._activation(output, activation)
-
-            # print(tf.global_variables()[-6:])
-
-            self.params[name]['output_shape'] = output.shape
         if self.verbose:
+            padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
             print_conv_layer_params(
                 self.params[name]['weight_shape'], stride, padding, batch_norm, activation,
                 inputs.shape.as_list(), output.shape.as_list(), name=name)
-
-        # print(name, ": ", output)
         return output
     def _create_local_convolution_layer(
         self,
@@ -309,7 +269,7 @@ class DarkNet(object):
         return output
     def _create_pooling_layer(
         self,
-        input,
+        inputs,
         p_h, p_w,
         pooling_type,
         stride,
@@ -318,33 +278,22 @@ class DarkNet(object):
         '''
         Pooling layer
         '''
-        with tf.name_scope(name):
-            if 'avg' == pooling_type:
-                output = tf.nn.avg_pool(
-                    input,
-                    (1, p_h, p_w, 1),
-                    (1, stride, stride, 1),
-                    padding,
-                    name='avg_pooling')
-            elif 'max' == pooling_type:
-                output = tf.nn.max_pool(
-                    input,
-                    (1, p_h, p_w, 1),
-                    (1, stride, stride, 1),
-                    padding,
-                    name='avg_pooling')
-            else:
-                raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
-        # print("pool input: ", input)
-        # print("pool output: ", output)
+        output = create_pooling_layer(
+            inputs,
+            p_h, p_w,
+            pooling_type,
+            stride,
+            padding=padding,
+            name=name)
+
         if self.verbose:
             print_pooling_layer_params(
                 [p_h, p_w], stride, padding, pooling_type,
-                input.shape.as_list(), output.shape.as_list(), name=name)
+                inputs.shape.as_list(), output.shape.as_list(), name=name)
         return output
     def _create_dropout_layer(
         self,
-        input,
+        inputs,
         prob,
         is_training=False,
         seed=None,
@@ -352,24 +301,24 @@ class DarkNet(object):
         '''
         Dropout Layer.
         '''
-        with tf.name_scope(name):
-            input = tf.layers.flatten(input, name='flatten')
+        output = create_dropout_layer(
+            inputs,
+            prob,
+            is_training=is_training,
+            seed=seed,
+            name=name)
 
-            if is_training:
-                output = tf.nn.dropout(input, prob, seed=seed, name='dropout')
-            else:
-                output = input
         if self.verbose:
             print_dropout_layer_params(
-                prob, input.shape.as_list(), output.shape.as_list(), name=name)
+                prob, inputs.shape.as_list(), output.shape.as_list(), name=name)
 
         return output
     def _create_flatten_layer(self, inputs, transpose=[0, 3, 1, 2]):
         inputs = tf.transpose(inputs, transpose)
-        return tf.layers.flatten(inputs, name="flatten")
+        return create_flatten_layer(inputs, name="flatten")
     def _create_fully_connectd_layer(
         self,
-        input,
+        inputs,
         n_out,
         activation='leaky',
         weight_initializer=tf.variance_scaling_initializer(),
@@ -379,44 +328,25 @@ class DarkNet(object):
         '''
         Fully-Connected layer.
         '''
+        inputs = self._create_flatten_layer(inputs)
+        output, param = create_fully_connectd_layer(
+            inputs,
+            n_out,
+            activation=activation,
+            activation_fn=None,
+            weight_initializer=weight_initializer,
+            use_bias=use_bias,
+            bias_initializer=bias_initializer,
+            name=name)
+        self.params[name] = param
 
-        with tf.variable_scope(name):
-            # Do flatten
-            # input = tf.layers.flatten(input, name='flatten')
-            input = self._create_flatten_layer(input)
-
-            # FC layer
-            n_in = input.shape.as_list()[-1]
-            if use_bias:
-                output = tf.contrib.layers.fully_connected(
-                    input,
-                    n_out,
-                    activation_fn=None)
-            else:
-                output = tf.contrib.layers.fully_connected(
-                    input,
-                    n_out,
-                    activation_fn=None,
-                    biases_initializer=None)
-
-            self.params[name] = {'weight_shape': [n_out, n_in]}
-
-            if activation:
-                output = self._activation(output, activation)
-
-            self.params[name]['output_shape'] = output.shape
-        print_fc_layer_params(
-            [n_out, n_in], activation,
-            input.shape.as_list(), output.shape.as_list(), name=name)
+        if self.verbose:
+            print_fc_layer_params(
+                param['weight_shape'], activation,
+                inputs.shape.as_list(), output.shape.as_list(), name=name)
 
         return output
     def _load_model(self, input):
-        # # Create input placeholder
-        # input = tf.placeholder(
-        #     tf.float32,
-        #     shape=[None, self.img_height, self.img_width, self.img_channels],
-        #     name="input")
-
         if self.verbose:
             print("\nConstructing network...\n-----------------------------------------")
         
@@ -570,7 +500,7 @@ class DarkNet(object):
         self.sess.run(assign_ops)
         return ptr, assign_ops
     def _load_fc_weight(self, section, config, ptr, weights):
-        n_out, n_in = self.params[section]['weight_shape']
+        n_in, n_out = self.params[section]['weight_shape']
 
         assign_ops = []
         with tf.variable_scope(section, reuse=True):
@@ -646,6 +576,7 @@ class DarkNet(object):
             self._load_pb()
         else:
             raise TypeError("Please provide model weight file.")
+    @timer_wrapper
     def _inference(self, image):
         if not isinstance(image, np.ndarray):
             raise TypeError("Need np.ndarray, got {} of type {}.".format(image, type(image)))
@@ -805,6 +736,9 @@ class DarkNet(object):
                 text_record = os.path.join(self.flags.output_dir, self.flags.text_record)
             else:
                 text_record = self.flags.text_record
+        else:
+            text_record = None
+
         if self.flags.output_dir:
             output_file = os.path.join(self.flags.output_dir, "detected.jpg")
         self.show_results(

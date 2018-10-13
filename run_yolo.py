@@ -56,18 +56,6 @@ def define_args():
     return args
 
 if "__main__" == __name__:
-
     args = define_args()
     model = DarkNet(args)
     model.detect_from_image_file(args.image)
-
-    # with tf.Session() as sess:
-    #     load_pb(sys.argv[1])
-        
-        # SxSx20 P(classi | object) SxSx3 confidence SxSx3x4 bbox
-        # classes_probs_vector = encoded[:, :S*S*Classes]
-        # confidences_vector = encoded[:, S*S*Classes : (S*S*Classes+S*S*3)]
-        # boxes_vector = encoded[:, -S*S*3*4:]
-        # print(classes_probs_vector.shape)
-        # print(confidences_vector.shape)
-        # print(boxes_vector.shape)

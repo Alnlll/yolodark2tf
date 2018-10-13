@@ -4,8 +4,10 @@
 from __future__ import division
 
 import os
-import numpy as np
+import time
 from io import StringIO
+
+import numpy as np
 import tensorflow as tf
 
 def load_pb(path):
@@ -119,3 +121,12 @@ def print_fc_layer_params(
         input_shape,
         output_shape
     ))
+def timer_wrapper(func):
+    def wrapper(*args, **args2):
+        t0 = time.time()
+        print "@%s, {%s} start" % (time.strftime("%X", time.localtime()), func.__name__)
+        wrapped = func(*args, **args2)
+        print "@%s, {%s} end" % (time.strftime("%X", time.localtime()), func.__name__)
+        print "@%.3fs taken for {%s}" % (time.time() - t0, func.__name__)
+        return wrapped
+    return wrapper

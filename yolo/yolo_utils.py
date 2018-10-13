@@ -9,9 +9,9 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
     '''
     Select those 
     Arguments:
-        box_confidences - tensor of shape [S, S, B]
-        class_probs - tensor of shape [S, S, C]
-        boxes - tensor of shape [S, S, B, 4]
+        box_confidences - tensor of shape [S, S, B], P(object)*IOU(ground truth)
+        class_probs - tensor of shape [S, S, C], P(classi | obejct)
+        boxes - tensor of shape [S, S, B, 4], coordinates of detected
     Returns:
         class_scores - tensor of shape [S, S, B, C]
     '''
@@ -81,3 +81,176 @@ def read_classes_names(file_path, sep='\n'):
 #     iou = inter_area / (b1_area + b2_area - inter_area + 1e-05)
 
 #     return iou
+def activation_func(inputs, activation, leaky_ratio=0.1):
+    if 'relu' == activation:
+        output = tf.nn.relu(inputs, name = 'relu')
+    elif 'leaky' == activation:
+        output = tf.nn.leaky_relu(inputs, alpha=leaky_ratio, name = 'leaky')
+    elif 'linear' == activation:
+        output = inputs
+    else:
+        raise TypeError("Unknown activation type {}.".format(activation))
+    
+    return output
+def create_bn_layer(
+    inputs,
+    momentum=0.9,
+    eps=1e-5,
+    is_training=False,
+    name=None):
+    '''
+    Create batch normalization layer
+    '''
+    return tf.layers.batch_normalization(
+        inputs,
+        momentum=momentum,
+        epsilon=eps,
+        training=is_training,
+        name=name)
+def create_convolution_layer(
+    inputs,
+    filters, f_h, f_w,
+    stride,
+    padding=None,
+    batch_norm=True,
+    momentum=.9,
+    eps=1e-5,
+    activation='leaky',
+    is_training=False,
+    filter_initializer=tf.variance_scaling_initializer(),
+    use_bias=False,
+    bias_initializer=tf.variance_scaling_initializer(),
+    name="conv_layer"):
+    '''
+    Create a convolution layer.
+    Arguments:
+    Returns:
+    '''
+
+    in_channels = inputs.shape.as_list()[-1]
+    padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
+
+    with tf.variable_scope(name):
+        if use_bias:
+            output = tf.layers.conv2d(
+                inputs,
+                filters,
+                (f_h, f_w),
+                strides=(stride, stride),
+                padding=padding,
+                use_bias=True,
+                kernel_initializer=filter_initializer,
+                bias_initializer=bias_initializer)
+        else:
+            output = tf.layers.conv2d(
+                inputs,
+                filters,
+                (f_h, f_w),
+                strides=(stride, stride),
+                padding=padding,
+                use_bias=False,
+                kernel_initializer=filter_initializer)
+
+        if batch_norm:
+            output = create_bn_layer(
+                output,
+                momentum=momentum,
+                eps=eps,
+                is_training=is_training)
+            # output = tf.layers.batch_normalization(
+            #     output,
+            #     momentum=_BATCH_NORM_DECAY,
+            #     epsilon=_BATCH_NORM_EPSILON,
+            #     training=is_training)
+
+        # activation
+        if activation:
+            output = activation_func(output, activation)
+
+        param = {
+            'output_shape': output.shape.as_list(),
+            'weight_shape': [f_h, f_w, in_channels, filters]}
+
+        return output, param
+def create_pooling_layer(
+    inputs,
+    p_h, p_w,
+    pooling_type,
+    stride,
+    padding="VALID",
+    name='poolin_layer'):
+    '''
+    Pooling layer
+    '''
+    with tf.name_scope(name):
+        if 'avg' == pooling_type:
+            output = tf.nn.avg_pool(
+                inputs,
+                (1, p_h, p_w, 1),
+                (1, stride, stride, 1),
+                padding,
+                name='avg_pooling')
+        elif 'max' == pooling_type:
+            output = tf.nn.max_pool(
+                inputs,
+                (1, p_h, p_w, 1),
+                (1, stride, stride, 1),
+                padding,
+                name='avg_pooling')
+        else:
+            raise TypeError("Required 'avg' or 'max', but received '{}'.".format(pooling_type))
+    return output
+def create_dropout_layer(
+    inputs,
+    prob,
+    is_training=False,
+    seed=None,
+    name='dropout_layer'):
+    '''
+    Dropout Layer.
+    '''
+    with tf.name_scope(name):
+        if is_training:
+            output = tf.nn.dropout(inputs, prob, seed=seed, name='dropout')
+        else:
+            output = inputs
+
+    return output
+def create_flatten_layer(inputs, name='flatten_layer'):
+    return tf.layers.flatten(inputs, name=name)
+def create_fully_connectd_layer(
+    inputs,
+    n_out,
+    activation='leaky',
+    activation_fn=None,
+    weight_initializer=tf.variance_scaling_initializer(),
+    use_bias=True,
+    bias_initializer=tf.variance_scaling_initializer(),
+    name='fc_layer'):
+    '''
+    Fully-Connected layer.
+    '''
+
+    with tf.variable_scope(name):
+        # FC layer
+        n_in = inputs.shape.as_list()[-1]
+        if use_bias:
+            output = tf.contrib.layers.fully_connected(
+                inputs,
+                n_out,
+                activation_fn=activation_fn)
+        else:
+            output = tf.contrib.layers.fully_connected(
+                inputs,
+                n_out,
+                activation_fn=activation_fn,
+                biases_initializer=bias_initializer)
+
+        if activation:
+            output = activation_func(output, activation)
+
+        param = {
+            'weight_shape': [n_in, n_out],
+            'output_shape': output.shape}
+
+        return output, param

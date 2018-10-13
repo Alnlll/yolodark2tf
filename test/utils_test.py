@@ -18,19 +18,26 @@ import numpy as np
 import tensorflow as tf
 from utils.utils import make_unique_section_file
 from utils.utils import get_padding_num
+from utils.utils import timer_wrapper
 from yolo.yolo_utils import select_boxes_by_classes_prob
 from yolo.yolo_utils import non_max_suppression
 from yolo.yolo_utils import read_classes_names
 
-# class TestUtils(unittest.TestCase):
-#     def test_get_padding_num_one_dim(self):
-#         input_shape = [10,13]
-#         kernel_size = [3,3]
-#         stride = 2
+class TestUtils(unittest.TestCase):
+    # def test_get_padding_num_one_dim(self):
+    #     input_shape = [10,13]
+    #     kernel_size = [3,3]
+    #     stride = 2
 
-#         self.assertTrue(
-#             (get_padding_num(input_shape, kernel_size, stride) == \
-#             np.array([[1., 2.], [1., 2.]])).all())
+    #     self.assertTrue(
+    #         (get_padding_num(input_shape, kernel_size, stride) == \
+    #         np.array([[1., 2.], [1., 2.]])).all())
+    def test_timer_wrapper(self):
+        @timer_wrapper
+        def func():
+            for i in range(1000):
+                x = i * i
+        func()
 class TestYOLOUtils(unittest.TestCase):
     # def test_select_boxes_by_classes_prob(self):
     #     box_confidences = tf.random_normal([3,3,2])
