@@ -23,19 +23,19 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-from yolo.yolov1 import DarkNet
+from yolo.yolov1 import Yolov1
 
-# def test_darknet_parse_cfg():
-#     model = DarkNet()
+# def test_yolov1_parse_cfg():
+#     model = Yolov1()
 #     print(model.parse_config('../cfg/yolov1.cfg'))
 
-# def test_darknet_create_model():
+# def test_yolov1_create_model():
 #     flags = mock.Mock()
-#     model = DarkNet(None)
+#     model = Yolov1(None)
 #     model.create_model('../cfg/yolov1.cfg')
 
 # def test_dark_create_bn_layer():
-#     model = DarkNet(None)
+#     model = Yolov1(None)
 
 #     sess = tf.InteractiveSession()
 #     x = tf.constant([[1,2,3],[2,4,8],[3,9,27]],dtype=tf.float32)
@@ -46,7 +46,7 @@ from yolo.yolov1 import DarkNet
 #     sess.close()
 
 # def test_dark_create_local_convolution_layer():
-#     model = DarkNet(None)
+#     model = Yolov1(None)
 
 #     sess = tf.InteractiveSession()
 #     x = tf.random_normal([1,2,2,3])
@@ -65,7 +65,7 @@ from yolo.yolov1 import DarkNet
 #     sess.close()
 
 # def test_dark_create_pooling_layer():
-#     model = DarkNet(None)
+#     model = Yolov1(None)
 
 #     x = tf.random_normal([1,10,10,3])
 #     y1 = model.create_pooling_layer(
@@ -84,7 +84,7 @@ from yolo.yolov1 import DarkNet
 #     print(y2)
 
 # def test_dark_create_fc_layer():
-#     model = DarkNet(None)
+#     model = Yolov1(None)
 
 #     x = tf.random_normal([1,10,10,3])
 #     y1 = model.create_fully_connectd_layer(
@@ -93,8 +93,8 @@ from yolo.yolov1 import DarkNet
 #         name='test_fc')
 #     print(y1)
 
-# def test_darknet_create_conv_layer():
-#     model = DarkNet(None)
+# def test_yolov1_create_conv_layer():
+#     model = Yolov1(None)
 
 #     input = tf.placeholder(tf.float32, shape = [2, 120, 120, 3], name = 'input')
 #     print(model.create_convolution_layer(
@@ -107,33 +107,33 @@ from yolo.yolov1 import DarkNet
 #         name='test'
 #         ))
 
-# def test_darknet_create_dropout_layer():
-#     model = DarkNet(None)
+# def test_yolov1_create_dropout_layer():
+#     model = Yolov1(None)
 #     x = tf.random_normal([2,3,4])
 #     y1 = model.create_dropout_layer(x, 0.5, name='test_dropout1')
 #     print(y1)
 #     y2 = model.create_dropout_layer(x, 0.5, is_training=True, name='test_dropout2')
 #     print(y2)
 # test_list = [
-#     # test_darknet_parse_cfg,
-#     # test_darknet_create_model,
-#     # test_darknet_create_conv_layer,
+#     # test_yolov1_parse_cfg,
+#     # test_yolov1_create_model,
+#     # test_yolov1_create_conv_layer,
 #     # test_dark_create_local_convolution_layer,
 #     # test_dark_create_pooling_layer,
 #     # test_dark_create_fc_layer,
-#     # test_darknet_create_dropout_layer,
+#     # test_yolov1_create_dropout_layer,
 #     # test_dark_create_bn_layer
-#     test_darknet_create_model
+#     test_yolov1_create_model
 # ]
 
-class TestDarkNet(unittest.TestCase):
+class TestYolov1(unittest.TestCase):
 
-    # def test_darknet_create_conv_layer_valid_pad(self):
+    # def test_yolov1_create_conv_layer_valid_pad(self):
     #     flags = mock.Mock()
     #     flags.cfg = "../cfg/yolov1.cfg"
     #     flags.train = True
 
-    #     model = DarkNet(flags)
+    #     model = Yolov1(flags)
     #     x = tf.random_normal([1,10,10,3])
     #     y = model.create_convolution_layer(
     #         x,
@@ -148,12 +148,12 @@ class TestDarkNet(unittest.TestCase):
     #         y.shape,
     #         tf.TensorShape([tf.Dimension(1), tf.Dimension(4), tf.Dimension(4), tf.Dimension(64)]))
 
-    # def test_darknet_create_conv_layer_same_pad(self):
+    # def test_yolov1_create_conv_layer_same_pad(self):
     #     flags = mock.Mock()
     #     flags.cfg = "../cfg/yolov1.cfg"
     #     flags.train = True
 
-    #     model = DarkNet(flags)
+    #     model = Yolov1(flags)
     #     x = tf.random_normal([1,10,10,3])
     #     y = model.create_convolution_layer(
     #         x,
@@ -168,30 +168,30 @@ class TestDarkNet(unittest.TestCase):
     #         y.shape,
     #         tf.TensorShape([tf.Dimension(1), tf.Dimension(10), tf.Dimension(10), tf.Dimension(64)]))
     
-    # def test_darknet_create_model(self):
+    # def test_yolov1_create_model(self):
     #     flags = mock.Mock()
     #     flags.cfg = "../cfg/yolov1.cfg"
     #     flags.train = True
         
-    #     model = DarkNet(flags)
+    #     model = Yolov1(flags)
     #     model.load_model()
 
-    # def test_darknet_load_weight_file_not_exists(self):
+    # def test_yolov1_load_weight_file_not_exists(self):
         # flags = mock.Mock()
         # flags.weight = "weights/yolov1.weight"
-        # model = DarkNet(flags)
+        # model = Yolov1(flags)
         # self.assertRaises(IOError, model.load_weight)
     
-    # def test_darknet_load_weight_header(self):
+    # def test_yolov1_load_weight_header(self):
     #     flags = mock.Mock()
     #     flags.cfg = "../cfg/yolov1.cfg"
     #     flags.weight = "../weights/yolov1.weights"
     #     flags.train = False
-    #     model = DarkNet(flags)
+    #     model = Yolov1(flags)
     #     model.load_model()
     #     model.load_weight()
 
-    # def test_darknet_detect(self):
+    # def test_yolov1_detect(self):
     #     flags = mock.Mock()
     #     flags.cfg = "../cfg/yolov1.cfg"
     #     flags.weight = "../weights/yolov1.weights"
@@ -205,12 +205,12 @@ class TestDarkNet(unittest.TestCase):
     #     # print(image.shape, image.dtype)
     #     # return
 
-    #     model = DarkNet(flags)
+    #     model = Yolov1(flags)
     #     model.load_model()
     #     model.load_weight()
     #     print(model.detect(image))
 
-    def test_darknet_detect_yolov1_tiny(self):
+    def test_yolov1_detect_yolov1_tiny(self):
         flags = mock.Mock()
         flags.cfg = "../cfg/yolov1-tiny.cfg"
         flags.weight = "../weights/tiny-yolov1.weights"
@@ -227,7 +227,7 @@ class TestDarkNet(unittest.TestCase):
         # print(image.shape, image.dtype)
         # return
 
-        model = DarkNet(flags)
+        model = Yolov1(flags)
         # model._load_model()
         # model._load_weight()
         model.detect_from_image_file("../data/person.jpg")

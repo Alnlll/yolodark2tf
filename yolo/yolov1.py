@@ -31,7 +31,7 @@ _LEAK_RATIO = .1
 _BATCH_NORM_DECAY = .9
 _BATCH_NORM_EPSILON = 1e-05
 
-class DarkNet(object):
+class Yolov1(object):
     def __init__(self, flags):
         self.cfg_parser = configparser.ConfigParser()
         self.sections = None
@@ -353,7 +353,7 @@ class DarkNet(object):
         output = input
 
         # Create model by config file
-        for index, section in enumerate(self.sections[1:]):
+        for section in self.sections[1:]:
             if section.startswith("convolutional"):
                 output = self._create_convolution_layer(
                     output,
@@ -466,7 +466,7 @@ class DarkNet(object):
                 kernel_data = np.transpose(kernel_data, [2, 3, 1, 0])
                 assign_ops.append(kernel.assign(kernel_data))
                 ptr += num
-        
+
         return ptr, assign_ops
     def _load_local_conv_weight(self, section, config, ptr, weights):
         f_h, f_w, prev_c, filters = self.params[section]['weight_shape']
@@ -484,19 +484,16 @@ class DarkNet(object):
             bias = tf.Variable("locally_connected2d/bias")
             assign_ops.append(bias.assign(weights[ptr:ptr + n_bias].tostring()))
             ptr += n_bias
-            
+
             kernel_data = weights[ptr:ptr + size].reshape(
                 [o_h*o_w, filters, prev_c, f_h, f_w])
             kernel_data = np.transpose(kernel_data, [0, 3, 4, 2, 1])
-            
+
             # weight_data = [kernel_data.tostring(), np.zeros([o_h, o_w, filters]).tostring()]
             kernel = tf.Variable("locally_connected2d/kernel")
             assign_ops.append(kernel.assign(kernel_data.tostring()))
             ptr += size
 
-            # print('load local {} {} {}'.format(n_bias, size, size+n_bias))
-            # print("load local conv n_bias:{} size:{}  loaded:{}".format(n_bias, size, size+bias))
-        
         self.sess.run(assign_ops)
         return ptr, assign_ops
     def _load_fc_weight(self, section, config, ptr, weights):
@@ -515,10 +512,6 @@ class DarkNet(object):
             assign_ops.append(weight.assign(weight_data))
             ptr += n_out * n_in
 
-            # self.sess.run(assign_ops[-2:])
-            # print("bias:\n", self.sess.run(bias))
-            # print("weight:\n", self.sess.run(weight))
-
         self.sess.run(assign_ops)
         return ptr, assign_ops
     def _load_ckpt(self):
@@ -531,7 +524,7 @@ class DarkNet(object):
 
         if self.verbose:
             print("\nLoading weights...\n-----------------------------------------")
-        
+
         with open(self.flags.weight, 'rb') as f:
             self.header = np.fromfile(f, dtype=np.int32, count=4)
             self.seen = self.header[3]
@@ -552,7 +545,7 @@ class DarkNet(object):
                     config = self.configs[section]
                     ptr, assign_ops = self._load_local_conv_weight(section, config, ptr, weights)
                     assign_op_list.insert(-1, assign_ops)
-                    
+
                 if section.startswith("connected"):
                     config = self.configs[section]
                     ptr, assign_ops = self._load_fc_weight(section, config, ptr, weights)
@@ -592,7 +585,7 @@ class DarkNet(object):
             tf.float32,
             shape=[None, None, None, self.img_channels],
             name="input")
-        
+
         # Handler image data
         processed_input = self._pre_process_input(input)
 
@@ -605,8 +598,6 @@ class DarkNet(object):
         with tf.name_scope("post_process"):
             S, B, C = self.cell_size, self.box_nums, self.classes
 
-            # print(encoding)
-            
             idx1 = S * S * C
             idx2 = idx1 + S*S*B
             class_probs = tf.reshape(encoding[:, :idx1], [S, S, C])
@@ -636,7 +627,7 @@ class DarkNet(object):
             class_scores, boxes, box_classes = select_boxes_by_classes_prob(
                 box_confidences, class_probs, boxes)
             # Do nms, get final results
-            scores, boxes, classes = non_max_suppression(
+            scores, boxcv2es, classes = non_max_suppression(
                 class_scores, boxes, box_classes
             )
 
@@ -747,4 +738,3 @@ class DarkNet(object):
             show=True,
             text_record=text_record,
             output_file=output_file)
-
