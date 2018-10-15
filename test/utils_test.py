@@ -23,7 +23,7 @@ from yolo.yolo_utils import select_boxes_by_classes_prob
 from yolo.yolo_utils import non_max_suppression
 from yolo.yolo_utils import read_classes_names
 
-class TestUtils(unittest.TestCase):
+class TestUtiils(unittest.TestCase):
     # def test_get_padding_num_one_dim(self):
     #     input_shape = [10,13]
     #     kernel_size = [3,3]

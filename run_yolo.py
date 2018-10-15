@@ -56,6 +56,14 @@ def define_args():
         "--version", type=int, default=1,
         help="Version of YOLO to be used."
     )
+    parser.add_argument(
+        "--score_thresh", type=float, default=.2,
+        help="Theshold to filter boxes with low confidence."
+    )
+    parser.add_argument(
+        "--iou_thresh", type=float, default=.5,
+        help="Threshold to filter overlaped boxes."
+    )
     
     args = parser.parse_args()
 
