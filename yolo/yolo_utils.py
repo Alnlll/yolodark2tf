@@ -9,18 +9,25 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
     '''
     Select those 
     Arguments:
-        box_confidences - tensor of shape [S, S, B], P(object)*IOU(ground truth)
-        class_probs - tensor of shape [S, S, C], P(classi | obejct)
-        boxes - tensor of shape [S, S, B, 4], coordinates of detected
+        box_confidences - tensor of shape [None, S, S, B], P(object)*IOU(ground truth)
+        class_probs - tensor of shape [None, S, S, C] or [None, S, S, B, C], P(classi | obejct)
+        boxes - tensor of shape [None, S, S, B, 4], coordinates of detected
     Returns:
         class_scores - tensor of shape [S, S, B, C]
     '''
     # S, S, B, _ = box_confidences.shape.as_list()
-    _, _, C = class_probs.shape.as_list()
+    C = class_probs.shape.as_list()[-1]
 
     # Calculate p(classes)
-    class_scores = tf.expand_dims(box_confidences, -1) * tf.expand_dims(class_probs, 2)
-    class_scores = tf.reshape(class_scores, [-1, C])
+    if 4 == len(class_probs.shape):
+        class_scores = tf.expand_dims(box_confidences, -1) * tf.expand_dims(class_probs, 3)
+        class_scores = tf.reshape(class_scores, [-1, C])
+    elif 5 == len(class_probs.shape):
+        class_scores = tf.expand_dims(box_confidences, -1) * class_probs
+        class_scores = tf.reshape(class_scores, [-1, C])
+    else:
+        raise ValueError("need 4,5 ndims class_probs, got {}".format(class_probs))
+    
     boxes = tf.reshape(boxes, [-1, 4])
     
     # Select max p(classes) box btween B boxes for one cell
@@ -35,7 +42,6 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
 
     return class_scores, boxes, box_classes
 def non_max_suppression(class_scores, boxes, box_classes, max_detect_count=10, iou_threshold=.6):
-
     # tf nms need coordinates of any diagonal pair of box corner
     # yolo gives center coordinate and h,w, need thranslate
     nms_boxes = tf.stack([

@@ -7,6 +7,8 @@ import sys
 import cv2
 import argparse
 import numpy as np
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"]='2'
 import tensorflow as tf
 
 from utils.utils import load_pb
@@ -33,6 +35,9 @@ def define_args():
     parser.add_argument(
         "--video", '-v', type=str, default="data/video.avi",
         help="Path to video to be detected.")
+    parser.add_argument(
+        "--img_size", type=int, default=448,
+        help="Excepted size of image feeded to detect network, invalid when 1 == version.")
     parser.add_argument(
         "--output_dir", '-o', type=str, default="output",
         help="Path to store output.")
@@ -64,5 +69,5 @@ if "__main__" == __name__:
     # models = [Yolov1, Yolov2, Yolov3]
     models = [Yolov1, Yolov2]
     args = define_args()
-    model = models[args.version](args)
+    model = models[args.version - 1](args)
     model.detect_from_image_file(args.image)

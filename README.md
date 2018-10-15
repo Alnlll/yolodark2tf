@@ -25,7 +25,9 @@
     - [x] parse names file
     - [x] NMS
 - [x] detect image
-- [ ] detect video stream 
+- [ ] detect video stream
+- [ ] save model as pb and ckpt
+- [ ] load model from pb and ckpt
 - [ ] train process
 
 # Files
@@ -54,7 +56,7 @@
 ├── README.md
 ├── run_yolo.py // main script
 ├── test // test scripts 
-│   ├── darknet_test.py
+│   ├── yolo_test.py
 │   └── utils_test.py
 ├── utils // basic utils
 │   ├── __init__.py

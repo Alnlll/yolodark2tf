@@ -13,7 +13,7 @@ except ImportError:
 import cv2
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import debug as tf_debug
+# from tensorflow.python import debug as tf_debug
 
 from utils.utils import make_unique_section_file
 from utils.utils import get_padding_num
@@ -27,7 +27,7 @@ from yolo_utils import *
 # from yolo_utils import non_max_suppression
 # from yolo_utils import read_classes_names
 
-_LEAK_RATIO = .1
+_LEAKY_RATIO = .1
 _BATCH_NORM_DECAY = .9
 _BATCH_NORM_EPSILON = 1e-05
 
@@ -143,7 +143,7 @@ class Yolov1(object):
                 self.configs[section] = {
                     'out': n_out, 'activation': activation}
     def _activation(self, inputs, activation):
-        return activation_func(inputs, activation, leaky_ratio=_LEAK_RATIO)
+        return activation_func(inputs, activation, leaky_ratio=_LEAKY_RATIO)
     def _create_bn_layer(
         self,
         inputs,
@@ -600,34 +600,38 @@ class Yolov1(object):
 
             idx1 = S * S * C
             idx2 = idx1 + S*S*B
-            class_probs = tf.reshape(encoding[:, :idx1], [S, S, C])
-            box_confidences = tf.reshape(encoding[:, idx1:idx2], [S, S, B])
-            boxes = tf.reshape(encoding[:, idx2:], [S, S, B, 4])
+            class_probs = tf.reshape(encoding[:, :idx1], [-1, S, S, C])
+            box_confidences = tf.reshape(encoding[:, idx1:idx2], [-1, S, S, B])
+            boxes = tf.reshape(encoding[:, idx2:], [-1, S, S, B, 4])
 
             # Restore boxes values
             # x,y is offset from cell's left-up corner within 0-1
             # w,h is sqrt result of scale by image height and width
-            x_offset = np.transpose(
-                np.reshape(
-                    np.array(
-                        [np.arange(S)] * S * B),
-                        [B, S, S]),
-                    [1, 2, 0])
-            y_offset = np.transpose(x_offset, [1, 0, 2])
+            # x_offset = np.transpose(
+            #     np.reshape(
+            #         np.array([np.arange(S)] * S * B),
+            #         [-1, B, S, S]),
+            #     [0, 2, 3, 1])
+            # y_offset = np.transpose(x_offset, [0, 2, 1, 3])
+            h_indexs = tf.range(S, dtype=tf.float32)
+            w_indexs = tf.range(S, dtype=tf.float32)
+            x_cell_offsets, y_cell_offsets = tf.meshgrid(h_indexs, w_indexs)
+            x_cell_offsets = tf.reshape(x_cell_offsets, [1,S,S,1])
+            y_cell_offsets = tf.reshape(y_cell_offsets, [1,S,S,1])
 
             # now all coordinate is offset from left-up corner within 0-1
             boxes = tf.stack([
-                (boxes[:, :, :, 0] + tf.constant(x_offset, dtype=tf.float32)) / S,
-                (boxes[:, :, :, 1] + tf.constant(y_offset, dtype=tf.float32)) / S,
-                tf.square(boxes[:, :, :, 2]),
-                tf.square(boxes[:, :, :, 3])],
-                axis=3)
+                (boxes[:, :, :, :, 0] + x_cell_offsets) / S,
+                (boxes[:, :, :, :, 1] + y_cell_offsets) / S,
+                tf.square(boxes[:, :, :, :, 2]),
+                tf.square(boxes[:, :, :, :, 3])],
+                axis=4)
 
             # select those boxes whose class confidence is larger than threshold
             class_scores, boxes, box_classes = select_boxes_by_classes_prob(
                 box_confidences, class_probs, boxes)
             # Do nms, get final results
-            scores, boxcv2es, classes = non_max_suppression(
+            scores, boxes, classes = non_max_suppression(
                 class_scores, boxes, box_classes
             )
 
@@ -731,6 +735,8 @@ class Yolov1(object):
             text_record = None
 
         if self.flags.output_dir:
+            if not os.path.exists(self.flags.output_dir):
+                os.makedirs(self.flags.output_dir)
             output_file = os.path.join(self.flags.output_dir, "detected.jpg")
         self.show_results(
             image,
