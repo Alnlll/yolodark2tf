@@ -14,6 +14,7 @@ import tensorflow as tf
 from utils.utils import load_pb
 from yolo.yolov1 import Yolov1
 from yolo.yolov2 import Yolov2
+from yolo.yolov3 import Yolov3
 
 def define_args():
     parser = argparse.ArgumentParser()
@@ -74,8 +75,8 @@ def define_args():
     return args
 
 if "__main__" == __name__:
-    # models = [Yolov1, Yolov2, Yolov3]
-    models = [Yolov1, Yolov2]
+    models = [Yolov1, Yolov2, Yolov3]
+    # models = [Yolov1, Yolov2]
     args = define_args()
     model = models[args.version - 1](args)
     model.detect_from_image_file(args.image)

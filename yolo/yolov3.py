@@ -36,12 +36,14 @@ _BATCH_NORM_EPSILON = 1e-05
 
 import sys
 
-class Yolov2(object):
+class Yolov3(object):
     def __init__(self, flags):
         self.cfg_parser = configparser.ConfigParser()
         self.sections = None
         self.params = {}
         self.configs = {}
+        # layer important values: input, output
+        self.vals = {}
         self.verbose = True
         self.flags = flags
 
@@ -53,6 +55,10 @@ class Yolov2(object):
 
         # Parse cfg file
         self._parse_config(self.flags.cfg)
+
+        for sec,val in self.configs.items():
+            print(sec, ": ", val)
+        sys.exit(0)
 
         # Construct network and load weight
         self.input, self.encoding, self.processed_image= self._build_network()
@@ -86,28 +92,29 @@ class Yolov2(object):
         self.cfg_parser.read(uni_cfg_path)
 
         # Get input image info
-        try:
-            # self.img_height = self.cfg_parser.getint(self.sections[0], "height")
-            # self.img_width = self.cfg_parser.getint(self.sections[0], "width")
+        # try:
+        #     # self.img_height = self.cfg_parser.getint(self.sections[0], "height")
+        #     # self.img_width = self.cfg_parser.getint(self.sections[0], "width")
             
-            # yolov2 doesn't use fc layer, different size of input can be feeded.
-            self.img_size = self.flags.img_size
-            self.img_channels = self.cfg_parser.getint(self.sections[0], "channels")
-        except Exception as e:
-            raise ValueError(e)
+        #     # yolov3 doesn't use fc layer, different size of input can be feeded.
+        #     self.img_size = self.flags.img_size
+        #     self.img_channels = self.cfg_parser.getint(self.sections[0], "channels")
+        # except Exception as e:
+        #     raise ValueError(e)
         
         # Get output feature map info
-        try:
-            self.classes = self.cfg_parser.getint(self.sections[-1], "classes")
-            self.box_nums = self.cfg_parser.getint(self.sections[-1], "num")
-            self.use_softmax = self.cfg_parser.getboolean(self.sections[-1], 'softmax')
-
-            anchors = self.cfg_parser.get(self.sections[-1], 'anchors').strip().split(",  ")
-            self.anchors = [[float(val.split(',')[0]), float(val.split(',')[1])] for val in anchors]
-        except Exception as e:
-            raise ValueError(e)
+        # try:
+        #     self.classes = self.cfg_parser.getint(self.sections[-1], "classes")
+        #     self.box_nums = self.cfg_parser.getint(self.sections[-1], "num")
+        #     self.use_softmax = self.cfg_parser.getboolean(self.sections[-1], 'softmax')
+        # except Exception as e:
+        #     raise ValueError(e)
 
         for section in self.sections[1:]:
+            if section.startswith("net"):
+                self.img_size = self.flags.img_size
+                self.img_channels = self.cfg_parser.getint(section, "channels")
+
             if section.startswith("convolutional"):
                 activation = self.cfg_parser.get(section, 'activation')
                 filters, size, stride, padding = map(
@@ -156,6 +163,30 @@ class Yolov2(object):
 
                 self.configs[section] = {
                     'out': n_out, 'activation': activation}
+            
+            if section.startswith('route'):
+                from_layer = self.cfg_parser.get(section, 'layers')
+                if ',' in from_layer:
+                    from_layer = from_layer.strip().split(', ')
+                    from_layer = [int(val) for val in from_layer]
+                else:
+                    from_layer = int(from_layer)
+                self.configs[section] = {'from_layer': from_layer}
+
+            if section.startswith('upsample'):
+                stride = self.cfg_parser.getint(section, 'stride')
+                self.configs[section] = {'stride': stride}
+            
+            if section.startswith('yolo'):
+                classes = self.cfg_parser.getint(section, 'classes')
+                box_nums = self.cfg_parser.getint(section, 'num')
+                mask = self.cfg_parser.get(section, 'mask').strip().split(',')
+                anchors = self.cfg_parser.get(self.sections[-1], 'anchors').strip().split(",  ")
+                anchors = [[float(val.split(',')[0]), float(val.split(',')[1])] for val in anchors]
+                
+                self.configs[section] = {
+                    'classes': classes, 'box_nums': box_nums,
+                    'mask': mask, 'anchors': anchors}
     def _activation(self, inputs, activation):
         return activation_func(inputs, activation, leaky_ratio=_LEAKY_RATIO)
     def _create_bn_layer(
@@ -192,7 +223,6 @@ class Yolov2(object):
         Arguments:
         Returns:
         '''
-
         output, param = create_convolution_layer(
             inputs,
             filters, f_h, f_w,
@@ -209,6 +239,7 @@ class Yolov2(object):
             name=name
         )
         self.params[name] = param
+        self.vals[name] = {"input": inputs, "output": output}
 
         if self.verbose:
             padding = 'SAME' if 1 == padding and 1 == stride else 'VALID'
@@ -238,6 +269,8 @@ class Yolov2(object):
             padding=padding,
             name=name)
 
+        self.vals[name] = {"input": inputs, "output": output}
+
         if self.verbose:
             print_pooling_layer_params(
                 [p_h, p_w], stride, padding, pooling_type,
@@ -245,7 +278,11 @@ class Yolov2(object):
         return output
     def _create_flatten_layer(self, inputs, transpose=[0, 3, 1, 2]):
         inputs = tf.transpose(inputs, transpose)
-        return create_flatten_layer(inputs, name="flatten")
+        output = create_flatten_layer(inputs, name="flatten")
+        
+        self.vals[name] = {"input": inputs, "output": output}
+
+        return output
     def _create_fully_connectd_layer(
         self,
         inputs,
@@ -268,7 +305,9 @@ class Yolov2(object):
             use_bias=use_bias,
             bias_initializer=bias_initializer,
             name=name)
+        
         self.params[name] = param
+        self.vals[name] = {"input": inputs, "output": output}
 
         if self.verbose:
             print_fc_layer_params(

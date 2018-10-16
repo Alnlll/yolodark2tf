@@ -11,14 +11,14 @@
     - [x] yolov1
     - [x] yolov1-tiny
     - [ ] yolov2
-    - [ ] yolov2-tiny
+    - [x] yolov2-tiny-voc
     - [ ] yolov3
     - [ ] yolov3-tiny
 - [ ] load weight from weights files
     - [ ] yolov1
     - [x] yolov1-tiny
     - [ ] yolov2
-    - [ ] yolov2-tiny
+    - [x] yolov2-tiny-voc
     - [ ] yolov3
     - [ ] yolov3-tiny
 - [ ] basic utils
