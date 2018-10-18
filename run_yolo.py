@@ -21,9 +21,6 @@ def define_args():
     parser.add_argument(
         "--train", action="store_true", default=False,
         help="Run as train mode(test mode if not set).",)
-    # parser.add_argument(
-    #     "--test", action="store_true", default=True,
-    #     help="Run as test mode.")
     parser.add_argument(
         "--cfg", '-c', type=str, default="cfg/yolo.cfg",
         help="Path to config file for network in darknet type.")
@@ -78,5 +75,6 @@ if "__main__" == __name__:
     models = [Yolov1, Yolov2, Yolov3]
     # models = [Yolov1, Yolov2]
     args = define_args()
+    print("is_training: ", args.train)
     model = models[args.version - 1](args)
     model.detect_from_image_file(args.image)

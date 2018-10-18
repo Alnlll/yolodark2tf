@@ -78,7 +78,7 @@ def get_padding_num(input_shape, kernel_size, stride):
 def print_conv_layer_params(
     kernel_size, stride, padding, bn, activation, input_shape, output_shape, name="Convlayer"):
     f_h, f_w, _, filters = kernel_size
-    print("name:{} size:{}x{} / {} filters:{} padding:{} bn:{} activation:{} shape:{}->{}".format(
+    print("layer:{} size:{}x{} / {} filters:{} padding:{} bn:{} activation:{} shape:{}->{}".format(
         format(name, '<20s'),
         format(f_h, 'd'),
         format(f_w, 'd'),
@@ -93,7 +93,7 @@ def print_conv_layer_params(
 def print_pooling_layer_params(
     pooling_size, stride, padding, pooling_type, input_shape, output_shape, name="PoolingLayer"):
     p_h, p_w = pooling_size
-    print("name:{} size:{}x{} / {} padding:{} type:{} shape:{}->{}".format(
+    print("layer:{} size:{}x{} / {} padding:{} type:{} shape:{}->{}".format(
         format(name, '<20s'),
         format(p_h, 'd'),
         format(p_w, 'd'),
@@ -105,7 +105,7 @@ def print_pooling_layer_params(
     ))
 def print_dropout_layer_params(
     prob, input_shape, output_shape, name="DropoutLayer"):
-    print("name:{} prob:{} shape:{}->{}".format(
+    print("layer:{} prob:{} shape:{}->{}".format(
         format(name, '<20s'),
         format(prob, '<10.4f'),
         input_shape,
@@ -113,11 +113,34 @@ def print_dropout_layer_params(
     ))
 def print_fc_layer_params(
     weight_shape, activation, input_shape, output_shape, name="FCLayer"):
-    print("name:{} weight:{}x{} activation:{} shape:{}->{}".format(
+    print("layer:{} weight:{}x{} activation:{} shape:{}->{}".format(
         format(name, '<20s'),
         format(weight_shape[0], 'd'),
         format(weight_shape[1], '<5d'),
         format(activation, '<10s'),
+        input_shape,
+        output_shape
+    ))
+def print_upsample_layer_params(
+    factor, input_shape, output_shape, name="Route"):
+    print("layer:{} factor:x{} shape:{}->{}".format(
+        format(name, '<20s'),
+        format(factor, '<8d'),
+        input_shape,
+        output_shape
+    ))
+def print_route_params(
+    routes, route_names, output_shape, name="Route"):
+    print("layer:{} routes:{} route_names:{}    shape:->{}".format(
+        format(name, '<20s'),
+        format(str(routes), '<9s'),
+        route_names,
+        output_shape
+    ))
+def print_v3_detection_layer_params(
+    input_shape, output_shape, name="yolo"):
+    print("layer:{} shape:->{}".format(
+        format(name, '<20s'),
         input_shape,
         output_shape
     ))

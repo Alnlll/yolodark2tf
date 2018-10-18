@@ -15,14 +15,17 @@ except ImportError:
 import cv2
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import debug as tf_debug
+# from tensorflow.python import debug as tf_debug
 
 from utils.utils import make_unique_section_file
 from utils.utils import get_padding_num
 from utils.utils import print_conv_layer_params
 from utils.utils import print_pooling_layer_params
 from utils.utils import print_dropout_layer_params
+from utils.utils import print_upsample_layer_params
+from utils.utils import print_route_params
 from utils.utils import print_fc_layer_params
+from utils.utils import print_v3_detection_layer_params
 from utils.utils import timer_wrapper
 from yolo_utils import *
 # from yolo_utils import select_boxes_by_classes_prob
@@ -33,6 +36,7 @@ from yolo_utils import *
 _LEAKY_RATIO = .1
 _BATCH_NORM_DECAY = .9
 _BATCH_NORM_EPSILON = 1e-05
+_WEIGHT_HEADER_LEN = 5
 
 import sys
 
@@ -56,17 +60,14 @@ class Yolov3(object):
         # Parse cfg file
         self._parse_config(self.flags.cfg)
 
-        for sec,val in self.configs.items():
-            print(sec, ": ", val)
-        sys.exit(0)
-
         # Construct network and load weight
         self.input, self.encoding, self.processed_image= self._build_network()
-        # whole network processing equal downsampling with ratio 32
-        self.output_size = self.img_size // 32
 
         # Post process encoding
         scores, boxes, classes = self._build_detector(self.encoding)
+        # print(scores)
+        # print(boxes)
+        # print(classes)
 
         # Define detect function
         self.detect_func = lambda image: self.sess.run(
@@ -84,6 +85,8 @@ class Yolov3(object):
         del self.flags
         self.sess.close()
     def _parse_config(self, cfg_path):
+        if self.verbose:
+            print("\nParsing config file {}...\n-----------------------------------------".format(cfg_path))
         if not os.path.exists(cfg_path):
             raise IOError("{} doesn't exists.".format(cfg_path))
         # Get cfg file with unique section name
@@ -92,15 +95,15 @@ class Yolov3(object):
         self.cfg_parser.read(uni_cfg_path)
 
         # Get input image info
-        # try:
-        #     # self.img_height = self.cfg_parser.getint(self.sections[0], "height")
-        #     # self.img_width = self.cfg_parser.getint(self.sections[0], "width")
+        try:
+            # self.img_height = self.cfg_parser.getint(self.sections[0], "height")
+            # self.img_width = self.cfg_parser.getint(self.sections[0], "width")
             
-        #     # yolov3 doesn't use fc layer, different size of input can be feeded.
-        #     self.img_size = self.flags.img_size
-        #     self.img_channels = self.cfg_parser.getint(self.sections[0], "channels")
-        # except Exception as e:
-        #     raise ValueError(e)
+            # yolov3 doesn't use fc layer, different size of input can be feeded.
+            self.img_size = self.flags.img_size
+            self.img_channels = self.cfg_parser.getint(self.sections[0], "channels")
+        except Exception as e:
+            raise ValueError(e)
         
         # Get output feature map info
         # try:
@@ -110,11 +113,7 @@ class Yolov3(object):
         # except Exception as e:
         #     raise ValueError(e)
 
-        for section in self.sections[1:]:
-            if section.startswith("net"):
-                self.img_size = self.flags.img_size
-                self.img_channels = self.cfg_parser.getint(section, "channels")
-
+        for index, section in enumerate(self.sections[1:]):
             if section.startswith("convolutional"):
                 activation = self.cfg_parser.get(section, 'activation')
                 filters, size, stride, padding = map(
@@ -168,9 +167,11 @@ class Yolov3(object):
                 from_layer = self.cfg_parser.get(section, 'layers')
                 if ',' in from_layer:
                     from_layer = from_layer.strip().split(', ')
-                    from_layer = [int(val) for val in from_layer]
+                    # from_layer = [int(val) for val in from_layer]
+                    # from_layer = map(lambda x: x if x>0 else (index+x))
+                    from_layer = [int(val) if int(val)>0 else (index+int(val)) for val in from_layer]
                 else:
-                    from_layer = int(from_layer)
+                    from_layer = int(from_layer) if int(from_layer) > 0 else (int(from_layer)+index)
                 self.configs[section] = {'from_layer': from_layer}
 
             if section.startswith('upsample'):
@@ -180,13 +181,21 @@ class Yolov3(object):
             if section.startswith('yolo'):
                 classes = self.cfg_parser.getint(section, 'classes')
                 box_nums = self.cfg_parser.getint(section, 'num')
-                mask = self.cfg_parser.get(section, 'mask').strip().split(',')
+                
+                masks = self.cfg_parser.get(section, 'mask').strip().split(',')
+                masks = [int(mask) for mask in masks]
+
                 anchors = self.cfg_parser.get(self.sections[-1], 'anchors').strip().split(",  ")
                 anchors = [[float(val.split(',')[0]), float(val.split(',')[1])] for val in anchors]
-                
+
+                self.classes = classes
+
                 self.configs[section] = {
-                    'classes': classes, 'box_nums': box_nums,
-                    'mask': mask, 'anchors': anchors}
+                    'classes': classes, 'box_nums': len(masks),
+                    'mask': masks, 'anchors': anchors}
+
+            if self.verbose:
+                print("{} - {}: {}".format(index, section, self.configs[section]))
     def _activation(self, inputs, activation):
         return activation_func(inputs, activation, leaky_ratio=_LEAKY_RATIO)
     def _create_bn_layer(
@@ -315,14 +324,86 @@ class Yolov3(object):
                 inputs.shape.as_list(), output.shape.as_list(), name=name)
 
         return output
-    def _load_model(self, input):
+    def _create_upsample_layer(self, inputs, config, name=None):
+        try:
+            stride = config['stride']
+        except Exception as e:
+            raise Exception(e)
+        
+        output = create_upsample_layer(inputs, stride, name=name)
+        
+        self.vals[name] = {'inputs': inputs, 'output': output}
+
+        if self.verbose:
+            print_upsample_layer_params(
+                stride,
+                inputs.shape.as_list(), output.shape.as_list(),
+                name=name)
+
+        return output
+    def _create_route_layer(self, config, name=None):
+        routes = config['from_layer']
+        get_layer_name = lambda x: self.sections[1:][x]
+
+        if isinstance(routes, int):
+            layer_names = get_layer_name(routes)
+            output = self.vals[layer_names]['output']
+        elif isinstance(routes, list):
+            layer_names = [get_layer_name(layer) for layer in routes]
+            output = reduce(
+                lambda x,y: tf.concat(
+                    [self.vals[x]['output'], self.vals[y]['output']], axis=-1),
+                layer_names)
+        else:
+            raise TypeError("Need from_layer of type int or list, got {}".format(type(routes)))
+        
+        if self.verbose:
+            print_route_params(
+                routes, layer_names,
+                output.shape.as_list(), name=name)
+
+        return output
+    def _create_detection_layer(self, inputs, config, name=None):
+        # Get anchors by mask
+        mask = config['mask']
+        anchors = config['anchors']
+        anchors = [m for i,m in enumerate(anchors) if i in mask]
+        classes = config['classes']
+
+        output = create_v3_detection_layer(inputs, classes, anchors, name=name)
+        self.vals[name] = {'inputs': inputs, 'output': output}
+
+        if self.verbose:
+            print_v3_detection_layer_params(
+                inputs.shape.as_list(), output.shape.as_list(),
+                name=name)
+
+        return output
+    def _gather_detections(self, name='gather_detections'):
+        detection_list = []
+        with tf.name_scope(name):
+            for section in self.sections[1:]:
+                if section.startswith('yolo'):
+                    detection_list.append(self.vals[section]['output'])
+            if detection_list:
+                if 1 == len(detection_list):
+                    detections = detection_list[0]
+                else:
+                    detections = reduce(
+                        lambda det1, det2: tf.concat([det1, det2], axis=1),
+                        detection_list)
+            else:
+                detections = None
+
+        return detections
+    def _load_model(self, inputs):
         if self.verbose:
             print("\nConstructing network...\n-----------------------------------------")
-        
-        output = input
+        output = inputs
 
+        # Exclude net layer for route index align
         # Create model by config file
-        for section in self.sections[1:]:
+        for index, section in enumerate(self.sections[1:]):
             if section.startswith("convolutional"):
                 output = self._create_convolution_layer(
                     output,
@@ -337,19 +418,6 @@ class Yolov3(object):
                     is_training=self.flags.train,
                     name=section)
                 # print("output shape: {}".format(output.shape))
-
-            if section.startswith("local"):
-                output = self._create_local_convolution_layer(
-                    output,
-                    self.configs[section]['filters'],
-                    self.configs[section]['size'],
-                    self.configs[section]['size'],
-                    self.configs[section]['stride'],
-                    self.configs[section]['padding'],
-                    self.configs[section]['activation'],
-                    name=section)
-                # print("output shape: {}".format(output.shape))
-
             if "pool" in section:
                 output = self._create_pooling_layer(
                     output,
@@ -360,8 +428,7 @@ class Yolov3(object):
                     padding=None,
                     name=section)
                 # print("output shape: {}".format(output.shape))
-
-            if "dropout" in section:
+            if section.startswith("dropout"):
                 output = self._create_dropout_layer(
                     output,
                     self.configs[section]['prob'],
@@ -369,18 +436,25 @@ class Yolov3(object):
                     seed=None,
                     name=section)
                 # print("output shape: {}".format(output.shape))
-
-            if "connected" in section:
+            if section.startswith("connected"):
                 output = self._create_fully_connectd_layer(
                     output,
                     self.configs[section]['out'],
                     activation=self.configs[section]['activation'],
                     name=section)
                 # print("output shape: {}".format(output.shape))
-        self.sess.run(tf.global_variables_initializer())
+            if section.startswith("upsample"):
+                output = self._create_upsample_layer(output, self.configs[section], name=section)
+            if section.startswith('route'):
+                output = self._create_route_layer(self.configs[section], name=section)
+            if section.startswith('yolo'):
+                _ = self._create_detection_layer(output, self.configs[section], name=section)
+        # Gather output from different scale branch
+        gathered = self._gather_detections()
+        if gathered is not None:
+            output = gathered
 
         return output
-        # print("output:\n",output)
     def _load_conv_weight(self, section, config, ptr, weights):
         # shape of kernel
         f_h, f_w, prev_c, filters = self.params[section]['weight_shape']
@@ -414,13 +488,6 @@ class Yolov3(object):
                     kernel_shape[3], kernel_shape[2], kernel_shape[0], kernel_shape[1])
                 kernel_data = np.transpose(kernel_data, [2, 3, 1, 0])
                 assign_ops.append(kernel.assign(kernel_data))
-
-                # self.sess.run(assign_ops[-5:])
-                # print("beta:\n", self.sess.run(beta))
-                # print("gamma:\n", self.sess.run(gamma))
-                # print("mean:\n", self.sess.run(mean))
-                # print("var: \n", self.sess.run(var))
-                # print("kernel:\n", self.sess.run(kernel))
 
                 ptr += num
             else:
@@ -487,7 +554,7 @@ class Yolov3(object):
         pass
     def _load_pb(self):
         pass
-    def _load_weight(self):
+    def _load_weight(self, header_len=4):
         if not os.path.exists(self.flags.weight):
             raise IOError("{} doesn't exist.".format(self.flags.weight))
 
@@ -495,7 +562,8 @@ class Yolov3(object):
             print("\nLoading weights...\n-----------------------------------------")
 
         with open(self.flags.weight, 'rb') as f:
-            self.header = np.fromfile(f, dtype=np.int32, count=4)
+            # different from v1,v2, v3 header's length is 5
+            self.header = np.fromfile(f, dtype=np.int32, count=header_len)
             self.seen = self.header[3]
 
             weights = np.fromfile(f, dtype=np.float32)
@@ -521,17 +589,15 @@ class Yolov3(object):
                     assign_op_list.insert(-1, assign_ops)
 
                 if self.verbose:
-                    # weights.shape[-1]-ptr
                     print("layer:{} load {} float data  total:{}/{}".format(
                         format(section, '<20s'),
                         format(ptr-prev_ptr, '<10d'),
-                        # ptr-prev_ptr,
-                        ptr+4,
-                        weights.shape[-1]+4))
+                        ptr+header_len,
+                        weights.shape[-1]+header_len))
             self.sess.run(assign_op_list)
     def _load_model_weight(self):
         if self.flags.weight:
-            self._load_weight()
+            self._load_weight(_WEIGHT_HEADER_LEN)
         elif self.flags.ckpt:
             self._load_ckpt()
         elif self.flags.pb:
@@ -543,73 +609,33 @@ class Yolov3(object):
         if not isinstance(image, np.ndarray):
             raise TypeError("Need np.ndarray, got {} of type {}.".format(image, type(image)))
         return self.detect_func(image[np.newaxis])
-    def _pre_process_input(self, input):
-        image = tf.to_float(input) / 255.0
-        image = tf.image.resize_images(
-            image, tf.constant([self.img_size, self.img_size], dtype=tf.int32))
+    def _pre_process_input(self, inputs):
+        with tf.name_scope('pre_process'):
+            image = tf.to_float(inputs) / 255.0
+            image = tf.image.resize_images(
+                image, tf.constant([self.img_size, self.img_size], dtype=tf.int32))
         return image
     def _build_network(self):
         # Input placeholder
-        input = tf.placeholder(
+        inputs = tf.placeholder(
             tf.float32,
             shape=[None, None, None, self.img_channels],
-            name="input")
+            name="inputs")
 
-        # Handler image data
-        processed_input = self._pre_process_input(input)
+        # pre-processed image data
+        processed_input = self._pre_process_input(inputs)
 
         # Builde network
         output = self._load_model(processed_input)
         self._load_model_weight()
 
-        return input, output, processed_input
+        return inputs, output, processed_input
     def _build_detector(self, encoding):
         with tf.name_scope("post_process"):
-            S, B, C = self.output_size, self.box_nums, self.classes
-
-            # print(S)
-            # print(B)
-            # print(C)
-
-            detect_outputs = tf.reshape(encoding, [-1, S, S, B, C + 5])
-
-            # bx = sigmoid(tx) + cx, by = sigmoid(ty) + cy, shape:[None, S*S, B, 2]
-            xy_offsets = tf.nn.sigmoid(detect_outputs[:,:,:,:,0:2], name='xy')
-            # bw = pw * exp(tw), bh = ph * exp(th), shape:[None, S*S, B, 2]
-            wh_scales = tf.exp(detect_outputs[:,:,:,:,2:4], name='wh')
-            # confidence = sigmoid(to), shape:[None, S*S, B]
-            box_confidences = tf.nn.sigmoid(detect_outputs[:,:,:,:,4], name='box_confidences')
-            # transform independent logistic prob results to softmax results, shape[None, S*S, B, classes]
-            if self.use_softmax:
-                class_probs = tf.nn.softmax(detect_outputs[:,:,:,:,5:], name="class_probs")
-            else:
-                class_probs = detect_outputs[:,:,:,:,5:]
-
-            # print(xy_offsets)
-            # print(wh_scales)
-            # print(box_confidences)
-            # print(class_probs)
-
-            # make cell offset martix
-            h_indexs = tf.range(S, dtype=tf.float32)
-            w_indexs = tf.range(S, dtype=tf.float32)
-            x_cell_offsets, y_cell_offsets = tf.meshgrid(h_indexs, w_indexs)
-            # print(x_cell_offsets)
-            # print(y_cell_offsets)
-            x_cell_offsets = tf.reshape(x_cell_offsets, [1,S,S,1])
-            y_cell_offsets = tf.reshape(y_cell_offsets, [1,S,S,1])
-
-            anchors = tf.constant(self.anchors, dtype=tf.float32, name="anchors")
-            # print(anchors)
-
-            # Get boxes, x,y is normalized box center offset from left-upper corner by whole image scale
-            # w,h is box size by whole image scale
-            boxes = tf.stack([
-                (x_cell_offsets + xy_offsets[:,:,:,:,0]) / S,
-                (y_cell_offsets + xy_offsets[:,:,:,:,1]) / S,
-                wh_scales[:,:,:,:,0] * anchors[:,0] / S,
-                wh_scales[:,:,:,:,1] * anchors[:,1] / S],
-                axis=4)
+            boxes, box_confidences, class_probs = tf.split(
+                encoding, [4, 1, self.classes],
+                axis=-1,
+                name='detections')
 
             # select those boxes whose class confidence is larger than threshold
             class_scores, boxes, box_classes = select_boxes_by_classes_prob(
@@ -687,31 +713,6 @@ class Yolov3(object):
     def detect_from_image_file(self, image_file):
         image = cv2.imread(image_file)
         image_RGB = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # print("input imageRGB:", image_RGB)
-
-        # print("input processed image:\n", self.sess.run(self.processed_image, feed_dict={self.input: image_RGB[np.newaxis]}))
-        # print("encoding:\n", self.sess.run(self.encoding, feed_dict={self.input: image_RGB[np.newaxis]}))
-        # print("conv1 input:\n", self.sess.run("resize_images/ResizeBilinear:0", feed_dict={self.input: image_RGB[np.newaxis]}))
-        # print("conv1 output:\n", self.sess.run("convolutional_1/leaky:0", feed_dict={self.input: image_RGB[np.newaxis]}))
-        # print("pool1 output:\n", self.sess.run("maxpool_1/avg_pooling:0", feed_dict={self.input: image_RGB[np.newaxis]}))
-        # print("conv8 output:\n", self.sess.run("convolutional_8/leaky:0", feed_dict={self.input: image_RGB[np.newaxis]}))
-        # print("flatten output:\n", self.sess.run("connected_1/flatten/Reshape:0", feed_dict={self.input: image_RGB[np.newaxis]}))
-        
-        # "convolutional_1/leaky:0"
-        # "convolutional_2/leaky:0"
-        # "convolutional_3/leaky:0"
-        # "convolutional_4/leaky:0"
-        # "convolutional_5/leaky:0"
-        # "convolutional_6/leaky:0"
-        # "convolutional_7/leaky:0"
-        # "convolutional_8/leaky:0"
-        # "maxpool_1/avg_pooling:0"
-        # "maxpool_2/avg_pooling:0"
-        # "maxpool_3/avg_pooling:0"
-        # "maxpool_4/avg_pooling:0"
-        # "maxpool_5/avg_pooling:0"
-        # "maxpool_6/avg_pooling:0"
-        # "connected_1/flatten/Reshape:0"
 
         if self.verbose:
             print("\nDetecting {}...\n-----------------------------------------".format(image_file))
@@ -719,6 +720,7 @@ class Yolov3(object):
         scores, boxes, classes = self._inference(image_RGB)
 
         img_h, img_w, _ = image.shape
+
         boxes[:,0] *= (1.0 * img_w)
         boxes[:,1] *= (1.0 * img_h)
         boxes[:,2] *= (1.0 * img_w)

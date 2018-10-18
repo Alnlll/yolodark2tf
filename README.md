@@ -1,8 +1,9 @@
-# Requirements
+# Dev Environment
 - Python 2.7.12
 - Tensorflow 1.10.1
-- Cuda 9.0 cudnn 7.0
-- Opencv
+- CUDA 9.0 cudnn 7.0
+- Opencv 3.2
+- ...
 
 # Features
 - [x] make unique section cfg file
@@ -13,14 +14,14 @@
     - [ ] yolov2
     - [x] yolov2-tiny-voc
     - [ ] yolov3
-    - [ ] yolov3-tiny
+    - [x] yolov3-tiny
 - [ ] load weight from weights files
     - [ ] yolov1
     - [x] yolov1-tiny
     - [ ] yolov2
     - [x] yolov2-tiny-voc
     - [ ] yolov3
-    - [ ] yolov3-tiny
+    - [x] yolov3-tiny
 - [ ] basic utils
     - [x] parse names file
     - [x] NMS

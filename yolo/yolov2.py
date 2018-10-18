@@ -56,8 +56,9 @@ class Yolov2(object):
 
         # Construct network and load weight
         self.input, self.encoding, self.processed_image= self._build_network()
+        
         # whole network processing equal downsampling with ratio 32
-        self.output_size = self.img_size // 32
+        # self.output_size = self.img_size // 32
 
         # Post process encoding
         scores, boxes, classes = self._build_detector(self.encoding)
@@ -526,11 +527,8 @@ class Yolov2(object):
         return input, output, processed_input
     def _build_detector(self, encoding):
         with tf.name_scope("post_process"):
-            S, B, C = self.output_size, self.box_nums, self.classes
-
-            # print(S)
-            # print(B)
-            # print(C)
+            _, S, S, _ = encoding.shape.as_list()
+            B, C = self.box_nums, self.classes
 
             detect_outputs = tf.reshape(encoding, [-1, S, S, B, C + 5])
 
@@ -554,7 +552,7 @@ class Yolov2(object):
             # make cell offset martix
             h_indexs = tf.range(S, dtype=tf.float32)
             w_indexs = tf.range(S, dtype=tf.float32)
-            x_cell_offsets, y_cell_offsets = tf.meshgrid(h_indexs, w_indexs)
+            x_cell_offsets, y_cell_offsets = tf.meshgrid(w_indexs, h_indexs)
             # print(x_cell_offsets)
             # print(y_cell_offsets)
             x_cell_offsets = tf.reshape(x_cell_offsets, [1,S,S,1])
