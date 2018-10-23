@@ -333,6 +333,11 @@ def create_upsample_layer(inputs, factor, name='upsampling_layer'):
         output = output[:, 2:-2, 2:-2, :]
 
     return output
+def create_shortcut_layer(inputs, shortcut, activation='linear', name='shortcut_layer'):
+    with tf.name_scope(name):
+        output = inputs + shortcut
+        output = activation_func(output, activation)
+    return output
 def create_v3_detection_layer(
     inputs, classes, anchors,
     img_size=(416,416),

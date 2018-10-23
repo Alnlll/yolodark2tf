@@ -25,6 +25,7 @@ from utils.utils import print_dropout_layer_params
 from utils.utils import print_upsample_layer_params
 from utils.utils import print_route_params
 from utils.utils import print_fc_layer_params
+from utils.utils import print_shortcut_params
 from utils.utils import print_v3_detection_layer_params
 from utils.utils import timer_wrapper
 from yolo_utils import *
@@ -173,6 +174,14 @@ class Yolov3(object):
                 else:
                     from_layer = int(from_layer) if int(from_layer) > 0 else (int(from_layer)+index)
                 self.configs[section] = {'from_layer': from_layer}
+
+            if section.startswith('shortcut'):
+                from_layer = self.cfg_parser.getint(section, 'from')
+                from_layer = from_layer if 0 < from_layer else from_layer+index
+
+                activation = self.cfg_parser.get(section, 'activation')
+
+                self.configs[section] = {'from_layer': from_layer, 'activation': activation}
 
             if section.startswith('upsample'):
                 stride = self.cfg_parser.getint(section, 'stride')
@@ -363,6 +372,29 @@ class Yolov3(object):
                 output.shape.as_list(), name=name)
 
         return output
+    def _create_shortcut_layer(self, inputs, config, name=None):
+        try:
+            from_layer = config['from_layer']
+            activation = config['activation']
+        except Exception as e:
+            raise KeyError(e)
+
+        layer_name = self.sections[1:][from_layer]
+
+        output = create_shortcut_layer(
+            inputs,
+            self.vals[layer_name]['output'],
+            activation=activation,
+            name=name)
+
+        self.vals[name] = {'inputs': inputs, 'output': output}
+
+        if self.verbose:
+            print_shortcut_params(
+                from_layer, activation,
+                inputs.shape.as_list(), output.shape.as_list(),
+                name=name)
+        return output
     def _create_detection_layer(self, inputs, config, name=None):
         # Get anchors by mask
         mask = config['mask']
@@ -447,6 +479,8 @@ class Yolov3(object):
                 output = self._create_upsample_layer(output, self.configs[section], name=section)
             if section.startswith('route'):
                 output = self._create_route_layer(self.configs[section], name=section)
+            if section.startswith('shortcut'):
+                output = self._create_shortcut_layer(output, self.configs[section], name=section)
             if section.startswith('yolo'):
                 _ = self._create_detection_layer(output, self.configs[section], name=section)
         # Gather output from different scale branch

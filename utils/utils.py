@@ -137,9 +137,18 @@ def print_route_params(
         route_names,
         output_shape
     ))
+def print_shortcut_params(
+    from_layer, activation, input_shape, output_shape, name="Shortcut"):
+    print("layer:{} from:{} activation:{} shape:{}->{}".format(
+        format(name, '<20s'),
+        format(from_layer, '<11d'),
+        format(activation, '<7s'),
+        input_shape,
+        output_shape
+    ))
 def print_v3_detection_layer_params(
     input_shape, output_shape, name="yolo"):
-    print("layer:{} shape:->{}".format(
+    print("layer:{} shape:{}->{}".format(
         format(name, '<20s'),
         input_shape,
         output_shape
