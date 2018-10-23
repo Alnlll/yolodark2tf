@@ -340,7 +340,7 @@ def create_shortcut_layer(inputs, shortcut, activation='linear', name='shortcut_
     return output
 def create_v3_detection_layer(
     inputs, classes, anchors,
-    img_size=(416,416),
+    img_size=(448,448),
     use_softmax=True,
     name='detection_layer'):
     B, C = len(anchors), classes

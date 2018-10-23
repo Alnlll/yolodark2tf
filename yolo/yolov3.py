@@ -395,14 +395,14 @@ class Yolov3(object):
                 inputs.shape.as_list(), output.shape.as_list(),
                 name=name)
         return output
-    def _create_detection_layer(self, inputs, config, name=None):
+    def _create_detection_layer(self, inputs, config, img_size=(448,448), name=None):
         # Get anchors by mask
         mask = config['mask']
         anchors = config['anchors']
         anchors = [m for i,m in enumerate(anchors) if i in mask]
         classes = config['classes']
 
-        output = create_v3_detection_layer(inputs, classes, anchors, name=name)
+        output = create_v3_detection_layer(inputs, classes, anchors, img_size=img_size, name=name)
         self.vals[name] = {'inputs': inputs, 'output': output}
 
         if self.verbose:
@@ -482,7 +482,10 @@ class Yolov3(object):
             if section.startswith('shortcut'):
                 output = self._create_shortcut_layer(output, self.configs[section], name=section)
             if section.startswith('yolo'):
-                _ = self._create_detection_layer(output, self.configs[section], name=section)
+                _ = self._create_detection_layer(
+                    output, self.configs[section],
+                    img_size=(self.flags.img_size, self.flags.img_size),
+                    name=section)
         # Gather output from different scale branch
         gathered = self._gather_detections()
         if gathered is not None:
