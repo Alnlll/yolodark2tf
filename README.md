@@ -56,6 +56,7 @@
 │   └── voc.names
 ├── README.md
 ├── run_yolo.py // main script
+├── LICENSE // MIT LICENSE
 ├── test // test scripts 
 │   ├── yolo_test.py
 │   └── utils_test.py
