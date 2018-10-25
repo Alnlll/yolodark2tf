@@ -62,6 +62,10 @@ def define_args():
         "--iou_thresh", type=float, default=.5,
         help="Threshold to filter overlaped boxes."
     )
+    parser.add_argument(
+        "--max_count", type=int, default=20,
+        help="Max detection counts."
+    )
     
     args = parser.parse_args()
 

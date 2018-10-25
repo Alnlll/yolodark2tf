@@ -681,6 +681,7 @@ class Yolov3(object):
             # Do nms, get final results
             scores, boxes, classes = non_max_suppression(
                 class_scores, boxes, box_classes,
+                max_detect_count=self.flags.max_count,
                 iou_threshold=self.flags.iou_thresh)
 
             return scores, boxes, classes

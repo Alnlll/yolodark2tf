@@ -79,7 +79,7 @@ def select_boxes_by_classes_prob(box_confidences, class_probs, boxes, threshold=
     # box_classes = tf.boolean_mask(box_classes, mask)
 
     # return class_scores, boxes, box_classes
-def non_max_suppression(class_scores, boxes, box_classes, max_detect_count=10, iou_threshold=.5):
+def non_max_suppression(class_scores, boxes, box_classes, max_detect_count=20, iou_threshold=.5):
     # tf nms need coordinates of any diagonal pair of box corner
     # yolo gives center coordinate and h,w, need thranslate
     nms_boxes = tf.stack([
